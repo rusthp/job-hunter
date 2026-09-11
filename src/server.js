@@ -4,9 +4,17 @@ const express = require('express');
 const multer = require('multer');
 const { PDFParse } = require('pdf-parse');
 const mammoth = require('mammoth');
-const { db, getProfile, saveProfile, getSettings, saveSettings } = require('./db/db');
-const { inferSeniority, seniorityLabel, computeMatch, SENIORITY_KEYWORDS } = require('./matching');
-const { extractProfileFromResume, parseJobPrompt } = require('./ai');
+const {
+  db,
+  listProfiles,
+  createProfile,
+  getProfileById,
+  saveProfileById,
+  getSettingsByProfileId,
+  saveSettingsByProfileId,
+} = require('./db/db');
+const { inferSeniority, seniorityLabel, computeMatch, computeEligibility, SENIORITY_KEYWORDS } = require('./matching');
+const { extractProfileFromResume, parseJobPrompt, parsePreferences } = require('./ai');
 
 const upload = multer({ limits: { fileSize: 8 * 1024 * 1024 } });
 
@@ -29,6 +37,53 @@ const WORKPLACE_LABELS = {
   hybrid: 'Híbrido',
   remote: 'Remoto',
 };
+
+function requireProfile(req, res) {
+  const profileId = Number(req.query.profile_id || req.params.id || req.body.profile_id);
+  if (!profileId) {
+    res.status(400).json({ error: 'profile_id é obrigatório.' });
+    return null;
+  }
+  const profile = getProfileById(profileId);
+  if (!profile) {
+    res.status(404).json({ error: 'Perfil não encontrado.' });
+    return null;
+  }
+  return profileId;
+}
+
+app.get('/api/profiles', (req, res) => res.json(listProfiles()));
+
+app.post('/api/profiles', (req, res) => {
+  const { name } = req.body;
+  if (!name || !name.trim()) return res.status(400).json({ error: 'Nome do perfil é obrigatório.' });
+  res.json(createProfile(name.trim()));
+});
+
+app.get('/api/profiles/:id', (req, res) => {
+  const profile = getProfileById(Number(req.params.id));
+  if (!profile) return res.status(404).json({ error: 'Perfil não encontrado.' });
+  res.json(profile);
+});
+
+app.put('/api/profiles/:id', (req, res) => {
+  const id = Number(req.params.id);
+  if (!getProfileById(id)) return res.status(404).json({ error: 'Perfil não encontrado.' });
+  res.json(saveProfileById(id, req.body));
+});
+
+app.get('/api/profiles/:id/settings', (req, res) => {
+  const id = Number(req.params.id);
+  const settings = getSettingsByProfileId(id);
+  if (!settings) return res.status(404).json({ error: 'Perfil não encontrado.' });
+  res.json(settings);
+});
+
+app.put('/api/profiles/:id/settings', (req, res) => {
+  const id = Number(req.params.id);
+  if (!getSettingsByProfileId(id)) return res.status(404).json({ error: 'Perfil não encontrado.' });
+  res.json(saveSettingsByProfileId(id, req.body));
+});
 
 app.get('/api/stats', (req, res) => {
   const total = db.prepare('SELECT COUNT(*) c FROM jobs').get().c;
@@ -59,7 +114,10 @@ app.get('/api/stats', (req, res) => {
 });
 
 app.get('/api/jobs', (req, res) => {
-  const { contract_type, workplace_type, state, seniority, q } = req.query;
+  const profileId = requireProfile(req, res);
+  if (!profileId) return;
+
+  const { contract_type, workplace_type, state, seniority, q, show_all } = req.query;
   const clauses = [];
   const params = {};
   if (contract_type) {
@@ -79,8 +137,8 @@ app.get('/api/jobs', (req, res) => {
     params.q = `%${q}%`;
   }
   const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
-  const profile = getProfile();
-  const settings = getSettings();
+  const profile = getProfileById(profileId);
+  const settings = getSettingsByProfileId(profileId);
 
   let rows = db
     .prepare(
@@ -90,6 +148,7 @@ app.get('/api/jobs', (req, res) => {
     .all(params)
     .map((r) => {
       const seniorityKey = inferSeniority(r.title);
+      const { excluded, warnings } = computeEligibility(r, settings);
       return {
         ...r,
         description: undefined,
@@ -98,10 +157,13 @@ app.get('/api/jobs', (req, res) => {
         seniority: seniorityKey,
         seniority_label: seniorityKey ? seniorityLabel(seniorityKey) : 'Não identificado',
         match: computeMatch(r, profile, settings),
+        excluded_by_policy: excluded,
+        warnings,
       };
     });
 
   if (seniority) rows = rows.filter((r) => r.seniority === seniority);
+  if (!show_all) rows = rows.filter((r) => !r.excluded_by_policy);
 
   res.json(rows);
 });
@@ -126,12 +188,6 @@ app.get('/api/timeseries', (req, res) => {
   }
   res.json(series);
 });
-
-app.get('/api/profile', (req, res) => res.json(getProfile()));
-app.put('/api/profile', (req, res) => res.json(saveProfile(req.body)));
-
-app.get('/api/settings', (req, res) => res.json(getSettings()));
-app.put('/api/settings', (req, res) => res.json(saveSettings(req.body)));
 
 app.get('/api/seniority-levels', (req, res) => {
   res.json(SENIORITY_KEYWORDS.map(({ key, label }) => ({ key, label })));
@@ -166,6 +222,19 @@ app.post('/api/profile/import-resume', upload.single('resume'), async (req, res)
     res.json(extracted);
   } catch (err) {
     console.error('[import-resume]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/settings/import-preferences', async (req, res) => {
+  const { text } = req.body;
+  if (!text || !text.trim()) return res.status(400).json({ error: 'Texto vazio.' });
+
+  try {
+    const parsed = await parsePreferences(text);
+    res.json(parsed);
+  } catch (err) {
+    console.error('[import-preferences]', err);
     res.status(500).json({ error: err.message });
   }
 });

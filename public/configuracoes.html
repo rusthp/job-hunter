@@ -12,15 +12,25 @@
   <main class="main">
     <header class="page-header">
       <h1>Configurações</h1>
-      <p>Termos de busca, filtros e limite de envio — controla o que o coletor busca e o que aparece no Início.</p>
+      <p>Termos de busca, política de elegibilidade e limite de envio — controla o que o coletor busca e o que aparece no Início.</p>
     </header>
 
     <div class="form-section card">
+      <h2>Importar política de busca (texto livre)</h2>
+      <p class="hint">Cole aqui uma política que você já tenha em outro lugar (ex: um prompt de GPT com cargos-alvo, salário mínimo, contratação, localização, o que evitar). A IA preenche os campos abaixo — você revisa e clica em Salvar.</p>
+      <textarea id="preferences-text" placeholder="Cole sua política de busca aqui..." style="min-height:140px"></textarea>
+      <div style="margin-top:10px">
+        <button class="btn btn-primary" id="preferences-import-btn">Importar política</button>
+      </div>
+      <div id="preferences-status" class="hint"></div>
+    </div>
+
+    <div class="form-section card">
       <h2>Termos de busca (Gupy)</h2>
-      <p class="hint">Cada termo vira uma busca separada. Use termos de RH, Financeiro e Gestão — nada de tecnologia.</p>
+      <p class="hint">Cada termo vira uma busca separada. Use termos de RH, Financeiro, Contábil e Gestão — nada de tecnologia.</p>
       <div class="chips" id="terms-chips"></div>
       <div class="chip-input">
-        <input id="term-input" type="text" placeholder="Ex: analista de recursos humanos" />
+        <input id="term-input" type="text" placeholder="Ex: assistente contábil" />
         <button class="add" id="term-add">Adicionar</button>
       </div>
     </div>
@@ -37,27 +47,60 @@
 
     <div class="form-section card">
       <h2>Nível de experiência</h2>
-      <p class="hint">Filtra o Início pra mostrar só esses níveis (inferidos do título da vaga).</p>
+      <p class="hint">Vagas fora desses níveis ficam <strong>ocultas</strong> no Início. Deixe tudo desmarcado pra não restringir.</p>
       <div class="pill-group" id="seniority-pills"></div>
     </div>
 
     <div class="form-section card">
-      <h2>Modalidade</h2>
+      <h2>Modalidade aceita</h2>
+      <p class="hint">Vagas fora das modalidades marcadas ficam <strong>ocultas</strong>. Deixe tudo desmarcado pra aceitar qualquer modalidade.</p>
       <div class="pill-group" id="workplace-pills">
         <div class="pill" data-value="remote">Remoto</div>
         <div class="pill" data-value="hybrid">Híbrido</div>
         <div class="pill" data-value="on-site">Presencial</div>
       </div>
+      <div class="field" style="margin-top:14px; max-width:320px">
+        <label for="hybrid_city">Cidade aceita pra vagas híbridas (opcional)</label>
+        <input id="hybrid_city" type="text" placeholder="Ex: São José dos Campos" />
+      </div>
+      <div class="field" style="margin-top:14px; max-width:320px">
+        <label for="onsite_policy">O que fazer com vagas presenciais</label>
+        <select id="onsite_policy">
+          <option value="show">Mostrar normalmente</option>
+          <option value="flag">Mostrar com aviso (revisar antes de aplicar)</option>
+          <option value="hide">Ocultar</option>
+        </select>
+      </div>
     </div>
 
     <div class="form-section card">
-      <h2>Tipo de contrato</h2>
+      <h2>Tipo de contrato aceito</h2>
+      <p class="hint">Vagas fora dos tipos marcados ficam <strong>ocultas</strong>. Deixe tudo desmarcado pra aceitar qualquer tipo.</p>
       <div class="pill-group" id="contract-pills">
         <div class="pill" data-value="effective">Efetivo (CLT)</div>
         <div class="pill" data-value="temporary">Temporário</div>
         <div class="pill" data-value="internship">Estágio</div>
         <div class="pill" data-value="apprentice">Aprendiz</div>
         <div class="pill" data-value="vacancy_legal_entity">PJ</div>
+      </div>
+    </div>
+
+    <div class="form-section card">
+      <h2>Salário mínimo</h2>
+      <p class="hint">Gupy não expõe salário estruturado — só dá pra checar quando o valor aparece escrito na descrição da vaga. Vagas sem menção de salário ficam <strong>visíveis com aviso</strong> (não escondidas), porque não dá pra confirmar.</p>
+      <div class="field" style="max-width:200px">
+        <label for="min_salary">Piso salarial (R$, opcional)</label>
+        <input id="min_salary" type="number" placeholder="Ex: 2500" />
+      </div>
+    </div>
+
+    <div class="form-section card">
+      <h2>Termos a evitar</h2>
+      <p class="hint">Se a descrição da vaga contiver algum desses termos, ela aparece com um aviso (não é escondida — matching de texto pode dar falso positivo, ex: "não exige inglês fluente" também contém o termo).</p>
+      <div class="chips" id="exclude-chips"></div>
+      <div class="chip-input">
+        <input id="exclude-input" type="text" placeholder="Ex: viagens frequentes" />
+        <button class="add" id="exclude-add">Adicionar</button>
       </div>
     </div>
 
@@ -80,12 +123,14 @@
 <script src="sidebar.js"></script>
 <script>
 renderSidebar('configuracoes.html');
+let PROFILE_ID = null;
 
 let terms = [];
 let required = [];
 let seniorityFilter = [];
 let workplaceFilter = [];
 let contractFilter = [];
+let excludeKeywords = [];
 
 function renderChips(elId, list, onRemove) {
   document.getElementById(elId).innerHTML = list.map((s, i) => `
@@ -98,27 +143,23 @@ function renderChips(elId, list, onRemove) {
 
 function renderTerms() { renderChips('terms-chips', terms, (i) => { terms.splice(i, 1); renderTerms(); }); }
 function renderRequired() { renderChips('required-chips', required, (i) => { required.splice(i, 1); renderRequired(); }); }
+function renderExclude() { renderChips('exclude-chips', excludeKeywords, (i) => { excludeKeywords.splice(i, 1); renderExclude(); }); }
 
-document.getElementById('term-add').addEventListener('click', () => {
-  const input = document.getElementById('term-input');
-  const v = input.value.trim();
-  if (v && !terms.includes(v)) { terms.push(v); renderTerms(); }
-  input.value = '';
-});
-document.getElementById('term-input').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') { e.preventDefault(); document.getElementById('term-add').click(); }
-});
+function wireChipAdd(inputId, addId, list, renderFn, max) {
+  const add = () => {
+    const input = document.getElementById(inputId);
+    const v = input.value.trim();
+    if (max && list.length >= max) { alert(`Máximo de ${max} itens.`); input.value = ''; return; }
+    if (v && !list.includes(v)) { list.push(v); renderFn(); }
+    input.value = '';
+  };
+  document.getElementById(addId).addEventListener('click', add);
+  document.getElementById(inputId).addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
+}
 
-document.getElementById('required-add').addEventListener('click', () => {
-  const input = document.getElementById('required-input');
-  const v = input.value.trim();
-  if (v && required.length >= 2) { alert('Máximo de 2 skills obrigatórias.'); input.value = ''; return; }
-  if (v && !required.includes(v)) { required.push(v); renderRequired(); }
-  input.value = '';
-});
-document.getElementById('required-input').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') { e.preventDefault(); document.getElementById('required-add').click(); }
-});
+wireChipAdd('term-input', 'term-add', terms, renderTerms);
+wireChipAdd('required-input', 'required-add', required, renderRequired, 2);
+wireChipAdd('exclude-input', 'exclude-add', excludeKeywords, renderExclude);
 
 function togglePill(container, value, list) {
   const idx = list.indexOf(value);
@@ -154,20 +195,51 @@ async function loadSeniorityLevels() {
   syncPillSelection(document.getElementById('seniority-pills'), seniorityFilter);
 }
 
-async function loadSettings() {
-  const s = await fetch('api/settings').then(r => r.json());
-  terms = s.search_terms || [];
-  required = s.required_skills || [];
-  seniorityFilter = s.seniority_filter || [];
-  workplaceFilter = s.workplace_filter || [];
-  contractFilter = s.contract_filter || [];
-  document.getElementById('daily_send_limit').value = s.daily_send_limit || 5;
+function applySettingsToForm(s) {
+  terms = s.search_terms ?? terms;
+  required = s.required_skills ?? required;
+  seniorityFilter = s.seniority_filter ?? seniorityFilter;
+  workplaceFilter = s.workplace_filter ?? workplaceFilter;
+  contractFilter = s.contract_filter ?? contractFilter;
+  excludeKeywords = s.exclude_keywords ?? excludeKeywords;
+  if (s.daily_send_limit != null) document.getElementById('daily_send_limit').value = s.daily_send_limit;
+  if (s.min_salary != null) document.getElementById('min_salary').value = s.min_salary;
+  if (s.hybrid_city != null) document.getElementById('hybrid_city').value = s.hybrid_city;
+  if (s.onsite_policy != null) document.getElementById('onsite_policy').value = s.onsite_policy;
   renderTerms();
   renderRequired();
-  await loadSeniorityLevels();
+  renderExclude();
   syncPillSelection(document.getElementById('workplace-pills'), workplaceFilter);
   syncPillSelection(document.getElementById('contract-pills'), contractFilter);
+  syncPillSelection(document.getElementById('seniority-pills'), seniorityFilter);
 }
+
+async function loadSettings() {
+  const s = await fetch(`api/profiles/${PROFILE_ID}/settings`).then(r => r.json());
+  document.getElementById('daily_send_limit').value = s.daily_send_limit || 5;
+  await loadSeniorityLevels();
+  applySettingsToForm(s);
+}
+
+document.getElementById('preferences-import-btn').addEventListener('click', async () => {
+  const text = document.getElementById('preferences-text').value.trim();
+  const status = document.getElementById('preferences-status');
+  if (!text) { status.textContent = 'Cole o texto da política primeiro.'; return; }
+
+  status.textContent = 'Interpretando com IA...';
+  try {
+    const res = await fetch('api/settings/import-preferences', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text })
+    });
+    const parsed = await res.json();
+    if (!res.ok) throw new Error(parsed.error || 'Falha ao importar');
+
+    applySettingsToForm(parsed);
+    status.textContent = 'Importado ✓ — revise os campos abaixo e clique em Salvar configurações.';
+  } catch (err) {
+    status.textContent = 'Erro: ' + err.message;
+  }
+});
 
 document.getElementById('save-btn').addEventListener('click', async () => {
   const status = document.getElementById('save-status');
@@ -178,14 +250,21 @@ document.getElementById('save-btn').addEventListener('click', async () => {
     seniority_filter: seniorityFilter,
     workplace_filter: workplaceFilter,
     contract_filter: contractFilter,
+    exclude_keywords: excludeKeywords,
     daily_send_limit: Number(document.getElementById('daily_send_limit').value) || 5,
+    min_salary: document.getElementById('min_salary').value ? Number(document.getElementById('min_salary').value) : null,
+    hybrid_city: document.getElementById('hybrid_city').value.trim() || null,
+    onsite_policy: document.getElementById('onsite_policy').value,
   };
-  await fetch('api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  await fetch(`api/profiles/${PROFILE_ID}/settings`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   status.textContent = 'Salvo ✓';
   setTimeout(() => status.textContent = '', 2000);
 });
 
-loadSettings();
+(async () => {
+  PROFILE_ID = await initProfileSwitcher();
+  if (PROFILE_ID) await loadSettings();
+})();
 </script>
 </body>
 </html>

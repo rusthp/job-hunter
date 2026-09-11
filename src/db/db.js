@@ -23,6 +23,8 @@ CREATE INDEX IF NOT EXISTS idx_jobs_source ON jobs(source);
 CREATE INDEX IF NOT EXISTS idx_jobs_contract_type ON jobs(contract_type);
 CREATE INDEX IF NOT EXISTS idx_jobs_workplace_type ON jobs(workplace_type);
 
+-- profile/settings (singular) são o schema antigo, de perfil único.
+-- profiles/profile_settings (plural) suportam múltiplos perfis (ex: Ally, Ligia).
 CREATE TABLE IF NOT EXISTS profile (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   headline TEXT,
@@ -44,6 +46,40 @@ CREATE TABLE IF NOT EXISTS settings (
   workplace_filter TEXT NOT NULL DEFAULT '[]',
   contract_filter TEXT NOT NULL DEFAULT '[]',
   daily_send_limit INTEGER NOT NULL DEFAULT 5,
+  min_salary REAL,
+  hybrid_city TEXT,
+  onsite_policy TEXT NOT NULL DEFAULT 'flag',
+  exclude_keywords TEXT NOT NULL DEFAULT '[]',
+  updated_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS profiles (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  headline TEXT,
+  about TEXT,
+  email TEXT,
+  phone TEXT,
+  linkedin_url TEXT,
+  salary_expectation REAL,
+  currency TEXT DEFAULT 'BRL',
+  skills TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS profile_settings (
+  profile_id INTEGER PRIMARY KEY REFERENCES profiles(id) ON DELETE CASCADE,
+  search_terms TEXT NOT NULL DEFAULT '[]',
+  required_skills TEXT NOT NULL DEFAULT '[]',
+  seniority_filter TEXT NOT NULL DEFAULT '[]',
+  workplace_filter TEXT NOT NULL DEFAULT '[]',
+  contract_filter TEXT NOT NULL DEFAULT '[]',
+  daily_send_limit INTEGER NOT NULL DEFAULT 5,
+  min_salary REAL,
+  hybrid_city TEXT,
+  onsite_policy TEXT NOT NULL DEFAULT 'flag',
+  exclude_keywords TEXT NOT NULL DEFAULT '[]',
   updated_at TEXT
 );
 `);
@@ -55,8 +91,58 @@ const DEFAULT_SEARCH_TERMS = [
   'gerente administrativo', 'coordenador administrativo', 'gestão de pessoas', 'planejamento estratégico',
 ];
 
-db.prepare('INSERT OR IGNORE INTO profile (id, skills) VALUES (1, ?)').run('[]');
-db.prepare('INSERT OR IGNORE INTO settings (id, search_terms) VALUES (1, ?)').run(JSON.stringify(DEFAULT_SEARCH_TERMS));
+// Migração única: se profiles estiver vazia e existir o perfil antigo (id=1)
+// com dado real, vira o primeiro perfil da lista nomeado "Ally" — não perde nada.
+function migrateLegacyProfileIfNeeded() {
+  const count = db.prepare('SELECT COUNT(*) c FROM profiles').get().c;
+  if (count > 0) return;
+
+  const legacyProfile = db.prepare('SELECT * FROM profile WHERE id = 1').get();
+  const legacySettings = db.prepare('SELECT * FROM settings WHERE id = 1').get();
+  const hasRealData = legacyProfile && (legacyProfile.headline || legacyProfile.email || (legacyProfile.skills && legacyProfile.skills !== '[]'));
+
+  const name = 'Ally';
+  const insertProfile = db.prepare(
+    `INSERT INTO profiles (name, headline, about, email, phone, linkedin_url, salary_expectation, currency, skills, updated_at)
+     VALUES (@name, @headline, @about, @email, @phone, @linkedin_url, @salary_expectation, @currency, @skills, @updated_at)`
+  );
+  const info = insertProfile.run({
+    name,
+    headline: hasRealData ? legacyProfile.headline : null,
+    about: hasRealData ? legacyProfile.about : null,
+    email: hasRealData ? legacyProfile.email : null,
+    phone: hasRealData ? legacyProfile.phone : null,
+    linkedin_url: hasRealData ? legacyProfile.linkedin_url : null,
+    salary_expectation: hasRealData ? legacyProfile.salary_expectation : null,
+    currency: (hasRealData && legacyProfile.currency) || 'BRL',
+    skills: hasRealData ? legacyProfile.skills : '[]',
+    updated_at: hasRealData ? legacyProfile.updated_at : null,
+  });
+
+  const profileId = info.lastInsertRowid;
+  const s = legacySettings || {};
+  db.prepare(
+    `INSERT INTO profile_settings (profile_id, search_terms, required_skills, seniority_filter, workplace_filter,
+     contract_filter, daily_send_limit, min_salary, hybrid_city, onsite_policy, exclude_keywords, updated_at)
+     VALUES (@profile_id, @search_terms, @required_skills, @seniority_filter, @workplace_filter,
+     @contract_filter, @daily_send_limit, @min_salary, @hybrid_city, @onsite_policy, @exclude_keywords, @updated_at)`
+  ).run({
+    profile_id: profileId,
+    search_terms: s.search_terms || JSON.stringify(DEFAULT_SEARCH_TERMS),
+    required_skills: s.required_skills || '[]',
+    seniority_filter: s.seniority_filter || '[]',
+    workplace_filter: s.workplace_filter || '[]',
+    contract_filter: s.contract_filter || '[]',
+    daily_send_limit: s.daily_send_limit ?? 5,
+    min_salary: s.min_salary ?? null,
+    hybrid_city: s.hybrid_city ?? null,
+    onsite_policy: s.onsite_policy || 'flag',
+    exclude_keywords: s.exclude_keywords || '[]',
+    updated_at: s.updated_at ?? null,
+  });
+}
+
+migrateLegacyProfileIfNeeded();
 
 const upsertStmt = db.prepare(`
 INSERT INTO jobs (id, source, title, company, contract_type, workplace_type, city, state, published_date, url, description, search_term)
@@ -81,17 +167,49 @@ function upsertJobs(jobs) {
   tx(jobs);
 }
 
-function getProfile() {
-  const row = db.prepare('SELECT * FROM profile WHERE id = 1').get();
+function parseProfileRow(row) {
+  if (!row) return null;
   return { ...row, skills: JSON.parse(row.skills || '[]') };
 }
 
-function saveProfile(p) {
+function parseSettingsRow(row) {
+  if (!row) return null;
+  return {
+    ...row,
+    search_terms: JSON.parse(row.search_terms || '[]'),
+    required_skills: JSON.parse(row.required_skills || '[]'),
+    seniority_filter: JSON.parse(row.seniority_filter || '[]'),
+    workplace_filter: JSON.parse(row.workplace_filter || '[]'),
+    contract_filter: JSON.parse(row.contract_filter || '[]'),
+    exclude_keywords: JSON.parse(row.exclude_keywords || '[]'),
+  };
+}
+
+function listProfiles() {
+  return db.prepare('SELECT id, name, headline, updated_at FROM profiles ORDER BY id').all();
+}
+
+function createProfile(name) {
+  const info = db.prepare('INSERT INTO profiles (name, skills) VALUES (?, ?)').run(name, '[]');
+  const profileId = info.lastInsertRowid;
   db.prepare(
-    `UPDATE profile SET headline=@headline, about=@about, email=@email, phone=@phone,
+    'INSERT INTO profile_settings (profile_id, search_terms) VALUES (?, ?)'
+  ).run(profileId, JSON.stringify(DEFAULT_SEARCH_TERMS));
+  return getProfileById(profileId);
+}
+
+function getProfileById(id) {
+  return parseProfileRow(db.prepare('SELECT * FROM profiles WHERE id = ?').get(id));
+}
+
+function saveProfileById(id, p) {
+  db.prepare(
+    `UPDATE profiles SET name=@name, headline=@headline, about=@about, email=@email, phone=@phone,
      linkedin_url=@linkedin_url, salary_expectation=@salary_expectation, currency=@currency,
-     skills=@skills, updated_at=datetime('now') WHERE id = 1`
+     skills=@skills, updated_at=datetime('now') WHERE id = @id`
   ).run({
+    id,
+    name: p.name || getProfileById(id).name,
     headline: p.headline || null,
     about: p.about || null,
     email: p.email || null,
@@ -101,36 +219,43 @@ function saveProfile(p) {
     currency: p.currency || 'BRL',
     skills: JSON.stringify(p.skills || []),
   });
-  return getProfile();
+  return getProfileById(id);
 }
 
-function getSettings() {
-  const row = db.prepare('SELECT * FROM settings WHERE id = 1').get();
-  return {
-    ...row,
-    search_terms: JSON.parse(row.search_terms || '[]'),
-    required_skills: JSON.parse(row.required_skills || '[]'),
-    seniority_filter: JSON.parse(row.seniority_filter || '[]'),
-    workplace_filter: JSON.parse(row.workplace_filter || '[]'),
-    contract_filter: JSON.parse(row.contract_filter || '[]'),
-  };
+function getSettingsByProfileId(id) {
+  return parseSettingsRow(db.prepare('SELECT * FROM profile_settings WHERE profile_id = ?').get(id));
 }
 
-function saveSettings(s) {
+function saveSettingsByProfileId(id, s) {
   db.prepare(
-    `UPDATE settings SET search_terms=@search_terms, required_skills=@required_skills,
+    `UPDATE profile_settings SET search_terms=@search_terms, required_skills=@required_skills,
      seniority_filter=@seniority_filter, workplace_filter=@workplace_filter,
      contract_filter=@contract_filter, daily_send_limit=@daily_send_limit,
-     updated_at=datetime('now') WHERE id = 1`
+     min_salary=@min_salary, hybrid_city=@hybrid_city, onsite_policy=@onsite_policy,
+     exclude_keywords=@exclude_keywords, updated_at=datetime('now') WHERE profile_id = @profile_id`
   ).run({
+    profile_id: id,
     search_terms: JSON.stringify(s.search_terms || []),
     required_skills: JSON.stringify((s.required_skills || []).slice(0, 2)),
     seniority_filter: JSON.stringify(s.seniority_filter || []),
     workplace_filter: JSON.stringify(s.workplace_filter || []),
     contract_filter: JSON.stringify(s.contract_filter || []),
     daily_send_limit: s.daily_send_limit ?? 5,
+    min_salary: s.min_salary ?? null,
+    hybrid_city: s.hybrid_city || null,
+    onsite_policy: s.onsite_policy || 'flag',
+    exclude_keywords: JSON.stringify(s.exclude_keywords || []),
   });
-  return getSettings();
+  return getSettingsByProfileId(id);
 }
 
-module.exports = { db, upsertJobs, getProfile, saveProfile, getSettings, saveSettings };
+module.exports = {
+  db,
+  upsertJobs,
+  listProfiles,
+  createProfile,
+  getProfileById,
+  saveProfileById,
+  getSettingsByProfileId,
+  saveSettingsByProfileId,
+};

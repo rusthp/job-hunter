@@ -56,6 +56,9 @@
       <select id="f-workplace" title="Filtrar por modalidade"><option value="">Modalidade: todas</option></select>
       <select id="f-state" title="Filtrar por estado"><option value="">Estado: todos</option></select>
       <select id="f-seniority" title="Filtrar por senioridade"><option value="">Senioridade: todas</option></select>
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted)">
+        <input type="checkbox" id="show-all" /> Mostrar vagas fora da política (Configurações)
+      </label>
     </div>
 
     <table>
@@ -79,6 +82,7 @@
 <script src="sidebar.js"></script>
 <script>
 renderSidebar('index.html');
+let PROFILE_ID = null;
 
 async function loadStats() {
   const stats = await fetch('api/stats').then(r => r.json());
@@ -183,6 +187,7 @@ function matchClass(m) {
 
 async function loadJobs() {
   const params = new URLSearchParams();
+  params.set('profile_id', PROFILE_ID);
   const q = document.getElementById('q').value.trim();
   const contract = document.getElementById('f-contract').value;
   const workplace = document.getElementById('f-workplace').value;
@@ -193,6 +198,7 @@ async function loadJobs() {
   if (workplace) params.set('workplace_type', workplace);
   if (state) params.set('state', state);
   if (seniority) params.set('seniority', seniority);
+  if (document.getElementById('show-all').checked) params.set('show_all', '1');
 
   const jobs = await fetch('api/jobs?' + params.toString()).then(r => r.json());
   const body = document.getElementById('jobs-body');
@@ -203,8 +209,12 @@ async function loadJobs() {
   }
 
   body.innerHTML = jobs.map(j => `
-    <tr>
-      <td><a class="job-link" href="${j.url}" target="_blank" rel="noopener">${j.title}</a></td>
+    <tr style="${j.excluded_by_policy ? 'opacity:0.55' : ''}">
+      <td>
+        <a class="job-link" href="${j.url}" target="_blank" rel="noopener">${j.title}</a>
+        ${j.excluded_by_policy ? '<div class="hint">Fora da política de Configurações</div>' : ''}
+        ${(j.warnings || []).map(w => `<div class="hint">⚠ ${w}</div>`).join('')}
+      </td>
       <td>${j.company || '—'}</td>
       <td><span class="tag">${j.contract_label}</span></td>
       <td><span class="tag">${j.workplace_label}</span></td>
@@ -216,7 +226,7 @@ async function loadJobs() {
   `).join('');
 }
 
-['q', 'f-contract', 'f-workplace', 'f-state', 'f-seniority'].forEach(id => {
+['q', 'f-contract', 'f-workplace', 'f-state', 'f-seniority', 'show-all'].forEach(id => {
   document.getElementById(id).addEventListener('input', loadJobs);
   document.getElementById(id).addEventListener('change', loadJobs);
 });
@@ -271,7 +281,12 @@ document.getElementById('prompt-input').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') { e.preventDefault(); runPromptFilter(); }
 });
 
-loadStats().then(loadJobs);
+(async () => {
+  PROFILE_ID = await initProfileSwitcher();
+  if (!PROFILE_ID) return;
+  await loadStats();
+  await loadJobs();
+})();
 </script>
 </body>
 </html>

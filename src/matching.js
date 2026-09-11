@@ -40,4 +40,78 @@ function computeMatch(job, profile, settings) {
   return Math.round((hits / skills.length) * 100);
 }
 
-module.exports = { inferSeniority, seniorityLabel, computeMatch, SENIORITY_KEYWORDS };
+/**
+ * Gupy não expõe salário estruturado. Extrai valores em R$ mencionados na
+ * descrição (quando existem) pra comparar com o piso configurado. Se a vaga
+ * não menciona valor nenhum, não dá pra confirmar nem violar — vira aviso,
+ * não exclusão (não temos como saber o real salário sem abrir a vaga).
+ */
+function extractSalaryMentions(text) {
+  if (!text) return [];
+  const matches = [...text.matchAll(/R\$\s*([\d]{1,3}(?:\.\d{3})*(?:,\d{2})?)/g)];
+  return matches
+    .map((m) => Number(m[1].replace(/\./g, '').replace(',', '.')))
+    .filter((n) => Number.isFinite(n) && n > 0);
+}
+
+/**
+ * Avalia uma vaga contra a política de busca configurada. Retorna
+ * { excluded, warnings } — excluded=true tira a vaga da listagem padrão,
+ * warnings são mostrados mas não escondem a vaga (evita falso positivo
+ * de matching de texto decidir sozinho por exclusão).
+ */
+function computeEligibility(job, settings) {
+  const warnings = [];
+  let excluded = false;
+
+  if (settings.contract_filter?.length && !settings.contract_filter.includes(job.contract_type)) {
+    excluded = true;
+  }
+
+  // on-site é governado só por onsite_policy (abaixo) — não pelo workplace_filter,
+  // pra permitir "não indicar por padrão, mas avaliar exceção" em vez de exclusão dura.
+  if (
+    job.workplace_type !== 'on-site' &&
+    settings.workplace_filter?.length &&
+    !settings.workplace_filter.includes(job.workplace_type)
+  ) {
+    excluded = true;
+  }
+
+  if (job.workplace_type === 'hybrid' && settings.hybrid_city) {
+    if ((job.city || '').toLowerCase() !== settings.hybrid_city.toLowerCase()) {
+      excluded = true;
+    }
+  }
+
+  if (job.workplace_type === 'on-site') {
+    if (settings.onsite_policy === 'hide') excluded = true;
+    else if (settings.onsite_policy === 'flag') warnings.push('Presencial — fora da preferência, avalie com cuidado');
+  }
+
+  const seniorityKey = inferSeniority(job.title);
+  if (settings.seniority_filter?.length && seniorityKey && !settings.seniority_filter.includes(seniorityKey)) {
+    excluded = true;
+  }
+
+  if (settings.min_salary) {
+    const mentions = extractSalaryMentions(job.description);
+    if (mentions.length) {
+      const lowest = Math.min(...mentions);
+      if (lowest < settings.min_salary) excluded = true;
+    } else {
+      warnings.push('Salário não informado na vaga — confira antes de aplicar');
+    }
+  }
+
+  const text = `${job.title} ${job.description || ''}`.toLowerCase();
+  for (const kw of settings.exclude_keywords || []) {
+    if (kw && text.includes(kw.toLowerCase())) {
+      warnings.push(`Contém termo a evitar: "${kw}"`);
+    }
+  }
+
+  return { excluded, warnings };
+}
+
+module.exports = { inferSeniority, seniorityLabel, computeMatch, computeEligibility, extractSalaryMentions, SENIORITY_KEYWORDS };

@@ -26,6 +26,15 @@
     </div>
 
     <div class="form-section card">
+      <h2>Nome do perfil</h2>
+      <p class="hint">Só pra identificar esse perfil no seletor da barra lateral.</p>
+      <div class="field" style="max-width:280px">
+        <label for="profile_name">Nome</label>
+        <input id="profile_name" type="text" placeholder="Ex: Ally, Ligia..." />
+      </div>
+    </div>
+
+    <div class="form-section card">
       <h2>Dados de contato</h2>
       <p class="hint">Usados no texto de candidatura, não são publicados em lugar nenhum.</p>
       <div class="row">
@@ -90,6 +99,7 @@
 <script src="sidebar.js"></script>
 <script>
 renderSidebar('perfil.html');
+let PROFILE_ID = null;
 
 let skills = [];
 
@@ -150,7 +160,8 @@ document.getElementById('resume-import-btn').addEventListener('click', async () 
 });
 
 async function loadProfile() {
-  const p = await fetch('api/profile').then(r => r.json());
+  const p = await fetch(`api/profiles/${PROFILE_ID}`).then(r => r.json());
+  document.getElementById('profile_name').value = p.name || '';
   document.getElementById('email').value = p.email || '';
   document.getElementById('phone').value = p.phone || '';
   document.getElementById('linkedin_url').value = p.linkedin_url || '';
@@ -166,6 +177,7 @@ document.getElementById('save-btn').addEventListener('click', async () => {
   const status = document.getElementById('save-status');
   status.textContent = 'Salvando...';
   const body = {
+    name: document.getElementById('profile_name').value.trim(),
     email: document.getElementById('email').value.trim(),
     phone: document.getElementById('phone').value.trim(),
     linkedin_url: document.getElementById('linkedin_url').value.trim(),
@@ -175,12 +187,15 @@ document.getElementById('save-btn').addEventListener('click', async () => {
     about: document.getElementById('about').value.trim(),
     skills,
   };
-  await fetch('api/profile', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  await fetch(`api/profiles/${PROFILE_ID}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   status.textContent = 'Salvo ✓';
   setTimeout(() => status.textContent = '', 2000);
 });
 
-loadProfile();
+(async () => {
+  PROFILE_ID = await initProfileSwitcher();
+  if (PROFILE_ID) await loadProfile();
+})();
 </script>
 </body>
 </html>

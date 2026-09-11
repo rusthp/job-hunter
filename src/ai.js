@@ -112,4 +112,24 @@ async function parseJobPrompt(prompt) {
   return callWithFallback(PROMPT_FILTER_SYSTEM_PROMPT, prompt);
 }
 
-module.exports = { extractProfileFromResume, parseJobPrompt };
+const PREFERENCES_SYSTEM_PROMPT = `Você converte uma política de busca de vagas (texto livre, pode estar em qualquer formato,
+inclusive um prompt que a pessoa já usava em outra IA) em preferências estruturadas.
+Área: RH, Financeiro, Contábil ou Gestão de empresas no Brasil.
+Responda APENAS com um JSON no formato:
+{
+  "search_terms": ["lista de cargos-alvo mencionados, como termos de busca"],
+  "contract_filter": ["lista com um ou mais de: effective, temporary, internship, apprentice, vacancy_legal_entity — inclua só os tipos ACEITOS. 'CLT' = effective. Se disser 'somente CLT', retorne apenas [\"effective\"]"],
+  "workplace_filter": ["lista com um ou mais de: remote, hybrid — inclua só remoto/híbrido se houver restrição explícita entre eles. NUNCA inclua 'on-site' aqui, presencial é tratado pelo campo onsite_policy abaixo. Se não houver restrição entre remoto/híbrido, retorne []"],
+  "min_salary": "número (ex: 2500) se um salário mínimo for mencionado, ou null",
+  "hybrid_city": "cidade onde vagas híbridas são aceitas, se mencionado (ex: 'São José dos Campos'), ou null",
+  "onsite_policy": "'hide' se disser pra não indicar/evitar presencial, 'flag' se disser que pode avaliar exceções, 'show' se não houver restrição a presencial",
+  "exclude_keywords": ["lista de termos/situações a evitar mencionados no texto, ex: 'viagens frequentes', 'escala', 'inglês fluente'"],
+  "seniority_filter": ["lista com um ou mais de: estagio, junior, pleno, senior, gerencial — só se o texto mencionar nível de senioridade explicitamente, senão []"]
+}
+Não invente regras que não estão no texto. Campos não mencionados devem ficar null ou lista vazia.`;
+
+async function parsePreferences(text) {
+  return callWithFallback(PREFERENCES_SYSTEM_PROMPT, text.slice(0, 6000));
+}
+
+module.exports = { extractProfileFromResume, parseJobPrompt, parsePreferences };

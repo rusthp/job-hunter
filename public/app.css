@@ -26,7 +26,13 @@ a { color: inherit; }
   border-right: 1px solid var(--panel-border);
   padding: 18px 14px;
 }
-.sidebar .brand { font-weight: 700; font-size: 16px; padding: 0 8px 18px; }
+.sidebar .brand { font-weight: 700; font-size: 16px; padding: 0 8px 12px; }
+.profile-switcher-wrap { padding: 0 8px 18px; }
+.profile-switcher-wrap label { display: block; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 6px; }
+.profile-switcher-wrap select {
+  width: 100%; background: #0e141c; border: 1px solid var(--panel-border); color: var(--text);
+  padding: 7px 8px; border-radius: 8px; font-size: 13px;
+}
 .sidebar nav a {
   display: block;
   padding: 9px 12px;
