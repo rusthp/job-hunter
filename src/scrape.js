@@ -1,7 +1,8 @@
 const { scrapeGupy } = require('./scrapers/gupy');
-const { upsertJobs, getSettings } = require('./db/db');
+const { scrapeVagasCom } = require('./scrapers/vagascom');
+const { upsertJobs, listProfiles, getSettingsByProfileId } = require('./db/db');
 
-// Fallback quando Configurações ainda não tem termos salvos: RH, Financeiro
+// Fallback quando nenhum perfil tem termos salvos ainda: RH, Financeiro
 // e Gestão de empresas — nada de vagas de tecnologia/dev.
 const DEFAULT_TERMS = [
   'recursos humanos',
@@ -22,16 +23,40 @@ const DEFAULT_TERMS = [
   'planejamento estratégico',
 ];
 
+function collectSearchTerms() {
+  const profiles = listProfiles();
+  const terms = new Set();
+  for (const p of profiles) {
+    const settings = getSettingsByProfileId(p.id);
+    for (const t of settings?.search_terms || []) terms.add(t);
+  }
+  return terms.size ? [...terms] : DEFAULT_TERMS;
+}
+
 async function main() {
   const argTerms = process.argv.slice(2);
-  const settingsTerms = getSettings().search_terms;
-  const searchTerms = argTerms.length ? argTerms : settingsTerms.length ? settingsTerms : DEFAULT_TERMS;
+  // Roda pra um perfil específico (--profile 2) ou pra união dos termos de todos os perfis.
+  const profileFlagIdx = argTerms.indexOf('--profile');
+  let searchTerms;
+  if (profileFlagIdx !== -1 && argTerms[profileFlagIdx + 1]) {
+    const settings = getSettingsByProfileId(Number(argTerms[profileFlagIdx + 1]));
+    searchTerms = settings?.search_terms?.length ? settings.search_terms : DEFAULT_TERMS;
+  } else if (argTerms.length) {
+    searchTerms = argTerms;
+  } else {
+    searchTerms = collectSearchTerms();
+  }
 
-  console.log(`Coletando vagas Gupy para ${searchTerms.length} termo(s)...`);
-  const jobs = await scrapeGupy(searchTerms);
-  console.log(`Coletadas ${jobs.length} vagas únicas.`);
+  console.log(`Coletando vagas para ${searchTerms.length} termo(s): Gupy + Vagas.com`);
 
-  upsertJobs(jobs);
+  const [gupyJobs, vagasComJobs] = await Promise.all([
+    scrapeGupy(searchTerms),
+    scrapeVagasCom(searchTerms),
+  ]);
+
+  console.log(`Gupy: ${gupyJobs.length} vagas. Vagas.com: ${vagasComJobs.length} vagas.`);
+
+  upsertJobs([...gupyJobs, ...vagasComJobs]);
   console.log('Salvas no banco (jobs.db).');
 }
 
