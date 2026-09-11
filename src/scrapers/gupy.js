@@ -24,8 +24,9 @@ function extractNextData(html) {
  * this scraper covers page 1 per search term. Broader coverage comes from
  * running multiple search terms, not from paging one term.
  */
-async function scrapeGupyTerm(term) {
-  const url = `https://portal.gupy.io/job-search/term=${encodeURIComponent(term)}`;
+async function scrapeGupyTerm(term, workplaceTypes) {
+  const params = `term=${encodeURIComponent(term)}` + (workplaceTypes?.length ? `&workplaceTypes=${workplaceTypes.join(',')}` : '');
+  const url = `https://portal.gupy.io/job-search/${params}`;
   const res = await fetch(url, { headers: { 'User-Agent': USER_AGENT, Accept: 'text/html' } });
   if (!res.ok) throw new Error(`Gupy respondeu HTTP ${res.status} para termo "${term}"`);
   const html = await res.text();
@@ -49,17 +50,31 @@ async function scrapeGupyTerm(term) {
   }));
 }
 
-async function scrapeGupy(terms) {
+/**
+ * Cada termo só traz 12 resultados (limite do SSR), e a mistura natural é
+ * majoritariamente presencial — vagas remoto/híbrido existem mas ficam
+ * afogadas. Por isso, além da busca ampla, roda uma segunda passada por
+ * termo filtrando explicitamente workplaceTypes=remote,hybrid (Gupy aceita
+ * esse filtro no servidor, testado e confirmado), garantindo que essas
+ * vagas apareçam mesmo quando não estão entre as 12 primeiras da busca ampla.
+ */
+async function scrapeGupy(terms, { includeRemoteHybridPass = true } = {}) {
   const results = [];
   for (const term of terms) {
     try {
-      const jobs = await scrapeGupyTerm(term);
-      results.push(...jobs);
+      results.push(...(await scrapeGupyTerm(term)));
     } catch (err) {
       console.error(`[gupy] falhou pra termo "${term}":`, err.message);
     }
+    if (includeRemoteHybridPass) {
+      try {
+        results.push(...(await scrapeGupyTerm(term, ['remote', 'hybrid'])));
+      } catch (err) {
+        console.error(`[gupy] falhou pra termo "${term}" (remoto/híbrido):`, err.message);
+      }
+    }
   }
-  // dedupe by id (same job can match multiple search terms)
+  // dedupe by id (same job can match multiple search terms/passes)
   const seen = new Set();
   return results.filter((j) => (seen.has(j.id) ? false : (seen.add(j.id), true)));
 }
