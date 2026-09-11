@@ -1,0 +1,187 @@
+require('dotenv').config({ path: require('path').join(__dirname, '..', '.env'), quiet: true });
+const path = require('path');
+const express = require('express');
+const multer = require('multer');
+const { PDFParse } = require('pdf-parse');
+const mammoth = require('mammoth');
+const { db, getProfile, saveProfile, getSettings, saveSettings } = require('./db/db');
+const { inferSeniority, seniorityLabel, computeMatch, SENIORITY_KEYWORDS } = require('./matching');
+const { extractProfileFromResume, parseJobPrompt } = require('./ai');
+
+const upload = multer({ limits: { fileSize: 8 * 1024 * 1024 } });
+
+const app = express();
+app.use(express.json());
+app.use(express.static(path.join(__dirname, '..', 'public')));
+
+const CONTRACT_LABELS = {
+  effective: 'Efetivo (CLT)',
+  temporary: 'Temporário',
+  internship: 'Estágio',
+  apprentice: 'Aprendiz',
+  associate: 'Associado',
+  vacancy_legal_entity: 'PJ',
+  parter: 'Parceiro',
+};
+
+const WORKPLACE_LABELS = {
+  'on-site': 'Presencial',
+  hybrid: 'Híbrido',
+  remote: 'Remoto',
+};
+
+app.get('/api/stats', (req, res) => {
+  const total = db.prepare('SELECT COUNT(*) c FROM jobs').get().c;
+  const byContract = db
+    .prepare('SELECT contract_type, COUNT(*) c FROM jobs GROUP BY contract_type ORDER BY c DESC')
+    .all()
+    .map((r) => ({ key: r.contract_type, label: CONTRACT_LABELS[r.contract_type] || r.contract_type || 'Não informado', count: r.c }));
+  const byWorkplace = db
+    .prepare('SELECT workplace_type, COUNT(*) c FROM jobs GROUP BY workplace_type ORDER BY c DESC')
+    .all()
+    .map((r) => ({ key: r.workplace_type, label: WORKPLACE_LABELS[r.workplace_type] || r.workplace_type || 'Não informado', count: r.c }));
+  const byState = db
+    .prepare("SELECT state, COUNT(*) c FROM jobs WHERE state != '' GROUP BY state ORDER BY c DESC LIMIT 15")
+    .all();
+  const lastCollected = db.prepare('SELECT MAX(collected_at) t FROM jobs').get().t;
+
+  const titles = db.prepare('SELECT title FROM jobs').all();
+  const senCounts = {};
+  for (const { title } of titles) {
+    const key = inferSeniority(title) || 'nao_identificado';
+    senCounts[key] = (senCounts[key] || 0) + 1;
+  }
+  const bySeniority = Object.entries(senCounts)
+    .map(([key, count]) => ({ key, label: key === 'nao_identificado' ? 'Não identificado' : seniorityLabel(key), count }))
+    .sort((a, b) => b.count - a.count);
+
+  res.json({ total, byContract, byWorkplace, byState, bySeniority, lastCollected });
+});
+
+app.get('/api/jobs', (req, res) => {
+  const { contract_type, workplace_type, state, seniority, q } = req.query;
+  const clauses = [];
+  const params = {};
+  if (contract_type) {
+    clauses.push('contract_type = @contract_type');
+    params.contract_type = contract_type;
+  }
+  if (workplace_type) {
+    clauses.push('workplace_type = @workplace_type');
+    params.workplace_type = workplace_type;
+  }
+  if (state) {
+    clauses.push('state = @state');
+    params.state = state;
+  }
+  if (q) {
+    clauses.push('(title LIKE @q OR company LIKE @q)');
+    params.q = `%${q}%`;
+  }
+  const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
+  const profile = getProfile();
+  const settings = getSettings();
+
+  let rows = db
+    .prepare(
+      `SELECT id, source, title, company, contract_type, workplace_type, city, state, published_date, url, description, search_term
+       FROM jobs ${where} ORDER BY published_date DESC LIMIT 300`
+    )
+    .all(params)
+    .map((r) => {
+      const seniorityKey = inferSeniority(r.title);
+      return {
+        ...r,
+        description: undefined,
+        contract_label: CONTRACT_LABELS[r.contract_type] || r.contract_type || 'Não informado',
+        workplace_label: WORKPLACE_LABELS[r.workplace_type] || r.workplace_type || 'Não informado',
+        seniority: seniorityKey,
+        seniority_label: seniorityKey ? seniorityLabel(seniorityKey) : 'Não identificado',
+        match: computeMatch(r, profile, settings),
+      };
+    });
+
+  if (seniority) rows = rows.filter((r) => r.seniority === seniority);
+
+  res.json(rows);
+});
+
+app.get('/api/timeseries', (req, res) => {
+  const days = Math.min(Number(req.query.days) || 30, 90);
+  const rows = db
+    .prepare(
+      `SELECT date(collected_at) d, COUNT(*) c FROM jobs
+       WHERE date(collected_at) >= date('now', '-' || @days || ' days')
+       GROUP BY date(collected_at)`
+    )
+    .all({ days });
+  const byDate = Object.fromEntries(rows.map((r) => [r.d, r.c]));
+
+  const series = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date();
+    d.setUTCDate(d.getUTCDate() - i);
+    const key = d.toISOString().slice(0, 10);
+    series.push({ date: key, count: byDate[key] || 0 });
+  }
+  res.json(series);
+});
+
+app.get('/api/profile', (req, res) => res.json(getProfile()));
+app.put('/api/profile', (req, res) => res.json(saveProfile(req.body)));
+
+app.get('/api/settings', (req, res) => res.json(getSettings()));
+app.put('/api/settings', (req, res) => res.json(saveSettings(req.body)));
+
+app.get('/api/seniority-levels', (req, res) => {
+  res.json(SENIORITY_KEYWORDS.map(({ key, label }) => ({ key, label })));
+});
+
+app.post('/api/profile/import-resume', upload.single('resume'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'Nenhum arquivo enviado.' });
+
+  try {
+    let text;
+    const { mimetype, buffer, originalname } = req.file;
+    if (mimetype === 'application/pdf' || originalname.toLowerCase().endsWith('.pdf')) {
+      const parser = new PDFParse({ data: buffer });
+      text = (await parser.getText()).text;
+      await parser.destroy();
+    } else if (
+      mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+      originalname.toLowerCase().endsWith('.docx')
+    ) {
+      text = (await mammoth.extractRawText({ buffer })).value;
+    } else if (mimetype.startsWith('text/') || originalname.toLowerCase().endsWith('.txt')) {
+      text = buffer.toString('utf-8');
+    } else {
+      return res.status(400).json({ error: 'Formato não suportado. Envie PDF, DOCX ou TXT.' });
+    }
+
+    if (!text || text.trim().length < 30) {
+      return res.status(422).json({ error: 'Não consegui extrair texto legível do arquivo.' });
+    }
+
+    const extracted = await extractProfileFromResume(text);
+    res.json(extracted);
+  } catch (err) {
+    console.error('[import-resume]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/jobs/parse-prompt', async (req, res) => {
+  const { prompt } = req.body;
+  if (!prompt || !prompt.trim()) return res.status(400).json({ error: 'Prompt vazio.' });
+
+  try {
+    const filters = await parseJobPrompt(prompt);
+    res.json(filters);
+  } catch (err) {
+    console.error('[parse-prompt]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+const PORT = process.env.PORT || 4173;
+app.listen(PORT, () => console.log(`Dashboard em http://localhost:${PORT}`));

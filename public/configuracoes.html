@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Configurações — Job Hunter</title>
+<link rel="stylesheet" href="app.css" />
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <main class="main">
+    <header class="page-header">
+      <h1>Configurações</h1>
+      <p>Termos de busca, filtros e limite de envio — controla o que o coletor busca e o que aparece no Início.</p>
+    </header>
+
+    <div class="form-section card">
+      <h2>Termos de busca (Gupy)</h2>
+      <p class="hint">Cada termo vira uma busca separada. Use termos de RH, Financeiro e Gestão — nada de tecnologia.</p>
+      <div class="chips" id="terms-chips"></div>
+      <div class="chip-input">
+        <input id="term-input" type="text" placeholder="Ex: analista de recursos humanos" />
+        <button class="add" id="term-add">Adicionar</button>
+      </div>
+    </div>
+
+    <div class="form-section card">
+      <h2>Skills obrigatórias</h2>
+      <p class="hint">Máximo de 2. Vagas cujo título/descrição não tiverem essas palavras ficam com match 0%. Deixe vazio pra não restringir.</p>
+      <div class="chips" id="required-chips"></div>
+      <div class="chip-input">
+        <input id="required-input" type="text" placeholder="Ex: recrutamento" />
+        <button class="add" id="required-add">Adicionar</button>
+      </div>
+    </div>
+
+    <div class="form-section card">
+      <h2>Nível de experiência</h2>
+      <p class="hint">Filtra o Início pra mostrar só esses níveis (inferidos do título da vaga).</p>
+      <div class="pill-group" id="seniority-pills"></div>
+    </div>
+
+    <div class="form-section card">
+      <h2>Modalidade</h2>
+      <div class="pill-group" id="workplace-pills">
+        <div class="pill" data-value="remote">Remoto</div>
+        <div class="pill" data-value="hybrid">Híbrido</div>
+        <div class="pill" data-value="on-site">Presencial</div>
+      </div>
+    </div>
+
+    <div class="form-section card">
+      <h2>Tipo de contrato</h2>
+      <div class="pill-group" id="contract-pills">
+        <div class="pill" data-value="effective">Efetivo (CLT)</div>
+        <div class="pill" data-value="temporary">Temporário</div>
+        <div class="pill" data-value="internship">Estágio</div>
+        <div class="pill" data-value="apprentice">Aprendiz</div>
+        <div class="pill" data-value="vacancy_legal_entity">PJ</div>
+      </div>
+    </div>
+
+    <div class="form-section card">
+      <h2>Limite diário de envio</h2>
+      <p class="hint">Vale pra quando a candidatura automática (draft de e-mail) entrar em operação.</p>
+      <div class="field" style="max-width:160px">
+        <label for="daily_send_limit">Candidaturas por dia</label>
+        <input id="daily_send_limit" type="number" min="1" max="50" />
+      </div>
+    </div>
+
+    <div class="save-bar">
+      <span class="save-status" id="save-status"></span>
+      <button class="btn btn-primary" id="save-btn">Salvar configurações</button>
+    </div>
+  </main>
+</div>
+
+<script src="sidebar.js"></script>
+<script>
+renderSidebar('configuracoes.html');
+
+let terms = [];
+let required = [];
+let seniorityFilter = [];
+let workplaceFilter = [];
+let contractFilter = [];
+
+function renderChips(elId, list, onRemove) {
+  document.getElementById(elId).innerHTML = list.map((s, i) => `
+    <span class="chip">${s}<button data-i="${i}" title="Remover">×</button></span>
+  `).join('');
+  document.querySelectorAll(`#${elId} button`).forEach(btn => {
+    btn.addEventListener('click', () => { onRemove(Number(btn.dataset.i)); });
+  });
+}
+
+function renderTerms() { renderChips('terms-chips', terms, (i) => { terms.splice(i, 1); renderTerms(); }); }
+function renderRequired() { renderChips('required-chips', required, (i) => { required.splice(i, 1); renderRequired(); }); }
+
+document.getElementById('term-add').addEventListener('click', () => {
+  const input = document.getElementById('term-input');
+  const v = input.value.trim();
+  if (v && !terms.includes(v)) { terms.push(v); renderTerms(); }
+  input.value = '';
+});
+document.getElementById('term-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); document.getElementById('term-add').click(); }
+});
+
+document.getElementById('required-add').addEventListener('click', () => {
+  const input = document.getElementById('required-input');
+  const v = input.value.trim();
+  if (v && required.length >= 2) { alert('Máximo de 2 skills obrigatórias.'); input.value = ''; return; }
+  if (v && !required.includes(v)) { required.push(v); renderRequired(); }
+  input.value = '';
+});
+document.getElementById('required-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); document.getElementById('required-add').click(); }
+});
+
+function togglePill(container, value, list) {
+  const idx = list.indexOf(value);
+  if (idx === -1) list.push(value); else list.splice(idx, 1);
+  syncPillSelection(container, list);
+}
+
+function syncPillSelection(container, list) {
+  container.querySelectorAll('.pill').forEach(p => {
+    p.classList.toggle('selected', list.includes(p.dataset.value));
+  });
+}
+
+document.getElementById('workplace-pills').addEventListener('click', (e) => {
+  const pill = e.target.closest('.pill');
+  if (!pill) return;
+  togglePill(e.currentTarget, pill.dataset.value, workplaceFilter);
+});
+document.getElementById('contract-pills').addEventListener('click', (e) => {
+  const pill = e.target.closest('.pill');
+  if (!pill) return;
+  togglePill(e.currentTarget, pill.dataset.value, contractFilter);
+});
+
+async function loadSeniorityLevels() {
+  const levels = await fetch('/api/seniority-levels').then(r => r.json());
+  document.getElementById('seniority-pills').innerHTML = levels.map(l => `<div class="pill" data-value="${l.key}">${l.label}</div>`).join('');
+  document.getElementById('seniority-pills').addEventListener('click', (e) => {
+    const pill = e.target.closest('.pill');
+    if (!pill) return;
+    togglePill(e.currentTarget, pill.dataset.value, seniorityFilter);
+  });
+  syncPillSelection(document.getElementById('seniority-pills'), seniorityFilter);
+}
+
+async function loadSettings() {
+  const s = await fetch('/api/settings').then(r => r.json());
+  terms = s.search_terms || [];
+  required = s.required_skills || [];
+  seniorityFilter = s.seniority_filter || [];
+  workplaceFilter = s.workplace_filter || [];
+  contractFilter = s.contract_filter || [];
+  document.getElementById('daily_send_limit').value = s.daily_send_limit || 5;
+  renderTerms();
+  renderRequired();
+  await loadSeniorityLevels();
+  syncPillSelection(document.getElementById('workplace-pills'), workplaceFilter);
+  syncPillSelection(document.getElementById('contract-pills'), contractFilter);
+}
+
+document.getElementById('save-btn').addEventListener('click', async () => {
+  const status = document.getElementById('save-status');
+  status.textContent = 'Salvando...';
+  const body = {
+    search_terms: terms,
+    required_skills: required,
+    seniority_filter: seniorityFilter,
+    workplace_filter: workplaceFilter,
+    contract_filter: contractFilter,
+    daily_send_limit: Number(document.getElementById('daily_send_limit').value) || 5,
+  };
+  await fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  status.textContent = 'Salvo ✓';
+  setTimeout(() => status.textContent = '', 2000);
+});
+
+loadSettings();
+</script>
+</body>
+</html>
