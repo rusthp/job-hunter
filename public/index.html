@@ -81,7 +81,7 @@
 renderSidebar('index.html');
 
 async function loadStats() {
-  const stats = await fetch('/api/stats').then(r => r.json());
+  const stats = await fetch('api/stats').then(r => r.json());
 
   document.getElementById('last-collected').textContent = stats.lastCollected
     ? `Última coleta: ${new Date(stats.lastCollected + 'Z').toLocaleString('pt-BR')} — ${stats.total} vagas no banco`
@@ -106,7 +106,7 @@ async function loadStats() {
 }
 
 async function renderChart() {
-  const series = await fetch('/api/timeseries?days=30').then(r => r.json());
+  const series = await fetch('api/timeseries?days=30').then(r => r.json());
   const w = 900, h = 220, padL = 34, padR = 16, padT = 16, padB = 28;
   const innerW = w - padL - padR, innerH = h - padT - padB;
   const max = Math.max(...series.map(p => p.count), 4);
@@ -194,7 +194,7 @@ async function loadJobs() {
   if (state) params.set('state', state);
   if (seniority) params.set('seniority', seniority);
 
-  const jobs = await fetch('/api/jobs?' + params.toString()).then(r => r.json());
+  const jobs = await fetch('api/jobs?' + params.toString()).then(r => r.json());
   const body = document.getElementById('jobs-body');
 
   if (!jobs.length) {
@@ -238,7 +238,7 @@ async function runPromptFilter() {
   status.textContent = 'Interpretando com IA...';
   applied.innerHTML = '';
   try {
-    const filters = await fetch('/api/jobs/parse-prompt', {
+    const filters = await fetch('api/jobs/parse-prompt', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt })
     }).then(r => {
       if (!r.ok) return r.json().then(e => { throw new Error(e.error || 'Falha ao interpretar'); });

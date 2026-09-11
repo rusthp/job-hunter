@@ -184,4 +184,5 @@ app.post('/api/jobs/parse-prompt', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 4173;
-app.listen(PORT, () => console.log(`Dashboard em http://localhost:${PORT}`));
+const HOST = process.env.HOST || '127.0.0.1';
+app.listen(PORT, HOST, () => console.log(`Dashboard em http://${HOST}:${PORT}`));

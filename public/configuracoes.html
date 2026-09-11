@@ -144,7 +144,7 @@ document.getElementById('contract-pills').addEventListener('click', (e) => {
 });
 
 async function loadSeniorityLevels() {
-  const levels = await fetch('/api/seniority-levels').then(r => r.json());
+  const levels = await fetch('api/seniority-levels').then(r => r.json());
   document.getElementById('seniority-pills').innerHTML = levels.map(l => `<div class="pill" data-value="${l.key}">${l.label}</div>`).join('');
   document.getElementById('seniority-pills').addEventListener('click', (e) => {
     const pill = e.target.closest('.pill');
@@ -155,7 +155,7 @@ async function loadSeniorityLevels() {
 }
 
 async function loadSettings() {
-  const s = await fetch('/api/settings').then(r => r.json());
+  const s = await fetch('api/settings').then(r => r.json());
   terms = s.search_terms || [];
   required = s.required_skills || [];
   seniorityFilter = s.seniority_filter || [];
@@ -180,7 +180,7 @@ document.getElementById('save-btn').addEventListener('click', async () => {
     contract_filter: contractFilter,
     daily_send_limit: Number(document.getElementById('daily_send_limit').value) || 5,
   };
-  await fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  await fetch('api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   status.textContent = 'Salvo ✓';
   setTimeout(() => status.textContent = '', 2000);
 });
