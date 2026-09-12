@@ -263,10 +263,14 @@ app.post('/api/profile/import-resume', upload.single('resume'), async (req, res)
 });
 
 app.post('/api/jobs/capture', (req, res) => {
-  const { title, company, city, state, url, description, contract_type, workplace_type, published_date } = req.body;
+  const { title, company, city, state, url, description, contract_type, workplace_type, published_date, contactEmail } = req.body;
   if (!title || !url) return res.status(400).json({ error: 'title e url são obrigatórios.' });
 
   const id = 'linkedin:' + crypto.createHash('sha1').update(url.split('?')[0]).digest('hex').slice(0, 16);
+  const descriptionWithEmail = contactEmail
+    ? `[E-mail de contato encontrado na vaga: ${contactEmail}]\n\n${description || ''}`
+    : (description || '');
+
   upsertJobs([{
     id,
     source: 'linkedin',
@@ -278,11 +282,11 @@ app.post('/api/jobs/capture', (req, res) => {
     state: state || null,
     published_date: published_date || new Date().toISOString(),
     url,
-    description: (description || '').slice(0, 4000),
+    description: descriptionWithEmail.slice(0, 4000),
     search_term: 'captura manual (extensão)',
   }]);
 
-  res.json({ ok: true, id });
+  res.json({ ok: true, id, contactEmail: contactEmail || null });
 });
 
 app.post('/api/settings/import-preferences', async (req, res) => {

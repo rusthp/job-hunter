@@ -176,7 +176,13 @@
     else if (/\bh[íi]brido\b/i.test(pageText.slice(0, 3000))) workplace_type = 'hybrid';
     else if (/\bpresencial\b/i.test(pageText.slice(0, 3000))) workplace_type = 'on-site';
 
-    return { title, company, city, state, description, workplace_type, url: location.href.split('?')[0] };
+    // Só LinkedIn não obriga candidatura pelo formulário próprio da plataforma —
+    // às vezes quem posta cola um e-mail direto na descrição. Regex simples,
+    // sem chamar nenhuma API externa, sem navegar em lugar nenhum.
+    const emailMatch = (description || '').match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+    const contactEmail = emailMatch ? emailMatch[0] : null;
+
+    return { title, company, city, state, description, workplace_type, contactEmail, url: location.href.split('?')[0] };
   }
 
   function runCapture() {
@@ -204,9 +210,22 @@
       renderPanel(`
         <div class="jh-header"><strong>Job Hunter</strong><button class="jh-close" title="Fechar">×</button></div>
         <div class="jh-status" id="jh-captured"></div>
+        ${job.contactEmail ? `
+          <div class="jh-email-found">
+            📧 E-mail encontrado na descrição:
+            <div class="jh-email-value" id="jh-email-value"></div>
+            <button class="jh-copy" id="jh-copy-email">Copiar e-mail</button>
+          </div>
+        ` : ''}
         <div class="jh-footer">Só essa vaga foi enviada — nada de navegação automática, nada mais foi lido.</div>
       `);
       setText('#jh-captured', `Vaga "${job.title}" salva no banco ✓`);
+      if (job.contactEmail) {
+        setText('#jh-email-value', job.contactEmail);
+        panel.querySelector('#jh-copy-email').addEventListener('click', () => {
+          navigator.clipboard.writeText(job.contactEmail);
+        });
+      }
       wireClose();
     });
   }

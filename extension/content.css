@@ -54,5 +54,7 @@
   margin-top: 8px !important; width: 100% !important; background: #2dd4a7 !important; color: #04231a !important; border: none !important;
   border-radius: 8px !important; padding: 8px !important; font-weight: 600 !important; cursor: pointer !important;
 }
+.jh-email-found { margin-top: 10px !important; padding: 10px !important; background: #0e141c !important; border: 1px solid #2dd4a7 !important; border-radius: 8px !important; color: #e6edf3 !important; font-size: 12px !important; }
+.jh-email-value { font-weight: 700 !important; color: #2dd4a7 !important; margin: 6px 0 !important; word-break: break-all !important; }
 .jh-footer { margin-top: 10px !important; color: #8b98a5 !important; font-size: 11px !important; }
 .jh-loading { color: #8b98a5 !important; }
