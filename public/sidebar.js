@@ -8,13 +8,22 @@ function renderSidebar(active) {
     .map((i) => `<a href="${i.href}" class="${i.href === active ? 'active' : ''}">${i.label}</a>`)
     .join('');
   document.getElementById('sidebar').innerHTML = `
-    <div class="brand">Job Hunter</div>
-    <div class="profile-switcher-wrap">
-      <label for="profile-switcher">Perfil ativo</label>
-      <select id="profile-switcher"></select>
+    <div class="sidebar-top">
+      <div class="brand">Job Hunter</div>
+      <button type="button" class="sidebar-toggle" id="sidebar-toggle" aria-label="Abrir menu">☰</button>
     </div>
-    <nav>${nav}</nav>
+    <div class="sidebar-collapsible" id="sidebar-collapsible">
+      <div class="profile-switcher-wrap">
+        <label for="profile-switcher">Perfil ativo</label>
+        <select id="profile-switcher"></select>
+      </div>
+      <nav>${nav}</nav>
+    </div>
   `;
+
+  const toggle = document.getElementById('sidebar-toggle');
+  const collapsible = document.getElementById('sidebar-collapsible');
+  toggle.addEventListener('click', () => collapsible.classList.toggle('open'));
 }
 
 async function initProfileSwitcher() {

@@ -10,20 +10,27 @@
 <div class="layout">
   <aside class="sidebar" id="sidebar"></aside>
   <main class="main">
-    <header class="page-header">
-      <h1>Início</h1>
+    <div class="hero">
+      <h1 id="greeting">Início</h1>
       <p id="last-collected">Carregando...</p>
-    </header>
+    </div>
 
     <section class="stats" id="stats-cards"></section>
 
-    <section class="chart-section">
+    <section class="recommended-section">
+      <h2>Recomendadas pra você</h2>
+      <p class="hint" id="recommended-hint"></p>
+      <div class="recommended-grid" id="recommended-grid"></div>
+    </section>
+
+    <details class="chart-section">
+      <summary>Atividade — vagas coletadas nos últimos 30 dias</summary>
       <div class="card">
-        <h3>Performance, últimos 30 dias</h3>
+        <h3>Performance</h3>
         <p class="hint">Vagas novas coletadas por dia</p>
         <div id="chart-wrap"></div>
       </div>
-    </section>
+    </details>
 
     <section class="breakdown">
       <div class="card">
@@ -44,7 +51,7 @@
       <label for="prompt-input">Busca por prompt (linguagem natural)</label>
       <div class="prompt-row">
         <input id="prompt-input" type="text" placeholder='Ex: "vagas remotas de RH sênior em São Paulo"' />
-        <button class="btn btn-primary" id="prompt-go">Interpretar</button>
+        <button class="btn btn-primary" id="prompt-go" type="button">Interpretar</button>
       </div>
       <div id="prompt-status" class="hint"></div>
       <div id="prompt-applied"></div>
@@ -61,21 +68,23 @@
       </label>
     </div>
 
-    <table>
-      <thead>
-        <tr>
-          <th>Vaga</th>
-          <th>Empresa</th>
-          <th>Contrato</th>
-          <th>Modalidade</th>
-          <th>Senioridade</th>
-          <th>Local</th>
-          <th>Publicada</th>
-          <th>Match</th>
-        </tr>
-      </thead>
-      <tbody id="jobs-body"></tbody>
-    </table>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Vaga</th>
+            <th>Empresa</th>
+            <th>Contrato</th>
+            <th>Modalidade</th>
+            <th>Senioridade</th>
+            <th>Local</th>
+            <th>Publicada</th>
+            <th>Match</th>
+          </tr>
+        </thead>
+        <tbody id="jobs-body"></tbody>
+      </table>
+    </div>
   </main>
 </div>
 
@@ -84,19 +93,79 @@
 renderSidebar('index.html');
 let PROFILE_ID = null;
 
-async function loadStats() {
-  const stats = await fetch('api/stats').then(r => r.json());
+function greetingPrefix() {
+  const h = new Date().getHours();
+  if (h < 12) return 'Bom dia';
+  if (h < 18) return 'Boa tarde';
+  return 'Boa noite';
+}
 
-  document.getElementById('last-collected').textContent = stats.lastCollected
-    ? `Última coleta: ${new Date(stats.lastCollected + 'Z').toLocaleString('pt-BR')} — ${stats.total} vagas no banco`
-    : 'Nenhuma coleta ainda';
+function matchClass(m) {
+  if (m === null || m === undefined) return 'low';
+  if (m >= 60) return 'high';
+  if (m >= 30) return 'mid';
+  return 'low';
+}
+
+async function loadHero() {
+  const profile = await fetch(`api/profiles/${PROFILE_ID}`).then(r => r.json());
+  document.getElementById('greeting').textContent = `${greetingPrefix()}, ${profile.name}.`;
+
+  const allJobs = await fetch(`api/jobs?profile_id=${PROFILE_ID}&show_all=1`).then(r => r.json());
+  const eligible = allJobs.filter(j => !j.excluded_by_policy);
+  const compatible = eligible.filter(j => j.match !== null && j.match > 0);
+  const highMatch = eligible.filter(j => j.match !== null && j.match >= 60);
+  const excludedCount = allJobs.length - eligible.length;
+  const hasSkills = profile.skills && profile.skills.length > 0;
+
+  document.getElementById('last-collected').textContent = allJobs.length
+    ? `${allJobs.length} vagas coletadas no total`
+    : 'Nenhuma vaga coletada ainda — rode o coletor.';
 
   document.getElementById('stats-cards').innerHTML = `
-    <div class="card"><div class="label">Total de vagas</div><div class="value">${stats.total}</div></div>
-    <div class="card"><div class="label">Tipos de contrato</div><div class="value">${stats.byContract.length}</div></div>
-    <div class="card"><div class="label">Modalidades</div><div class="value">${stats.byWorkplace.length}</div></div>
-    <div class="card"><div class="label">Estados cobertos</div><div class="value">${stats.byState.length}</div></div>
+    <div class="card"><div class="label">Vagas coletadas</div><div class="value">${allJobs.length}</div></div>
+    <div class="card"><div class="label">Elegíveis (política)</div><div class="value">${eligible.length}</div></div>
+    <div class="card"><div class="label">Alta compatibilidade</div><div class="value">${hasSkills ? highMatch.length : '—'}</div></div>
+    <div class="card"><div class="label">Fora da política</div><div class="value">${excludedCount}</div></div>
   `;
+
+  const hint = document.getElementById('recommended-hint');
+  const grid = document.getElementById('recommended-grid');
+
+  let recommended;
+  if (hasSkills) {
+    recommended = compatible.slice().sort((a, b) => b.match - a.match).slice(0, 6);
+    hint.textContent = 'Ordenadas por % de match com as skills do seu Perfil.';
+  } else {
+    recommended = eligible.slice().sort((a, b) => new Date(b.published_date) - new Date(a.published_date)).slice(0, 6);
+    hint.textContent = 'Cadastre skills no Perfil pra calcular compatibilidade — por enquanto, mostrando as mais recentes.';
+  }
+
+  if (!recommended.length) {
+    grid.innerHTML = '<div class="empty-recommended">Nenhuma vaga elegível ainda. Rode o coletor ou revise a política em Configurações.</div>';
+    return;
+  }
+
+  grid.innerHTML = recommended.map(j => `
+    <div class="job-card ${j.match >= 60 ? 'tier-high' : j.match >= 30 ? 'tier-mid' : ''}">
+      <a class="jc-title" href="${j.url}" target="_blank" rel="noopener">${j.title}</a>
+      <div class="jc-company">${j.company || 'Empresa não informada'} · ${[j.city, j.state].filter(Boolean).join(' / ') || 'Local não informado'}</div>
+      <div class="jc-tags">
+        <span class="tag">${j.contract_label}</span>
+        <span class="tag">${j.workplace_label}</span>
+        <span class="tag muted">${j.seniority_label}</span>
+      </div>
+      ${(j.warnings || []).map(w => `<div class="jc-warning">⚠ ${w}</div>`).join('')}
+      <div class="jc-match-row">
+        <div class="bar-track"><div class="bar-fill" style="width:${j.match ?? 0}%"></div></div>
+        <div class="jc-match-label ${matchClass(j.match)}">${j.match === null ? '—' : j.match + '%'}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function loadStats() {
+  const stats = await fetch('api/stats').then(r => r.json());
 
   renderChart();
   renderBreakdown('contract-breakdown', stats.byContract);
@@ -111,7 +180,7 @@ async function loadStats() {
 
 async function renderChart() {
   const series = await fetch('api/timeseries?days=30').then(r => r.json());
-  const w = 900, h = 220, padL = 34, padR = 16, padT = 16, padB = 28;
+  const w = 900, h = 180, padL = 34, padR = 16, padT = 16, padB = 28;
   const innerW = w - padL - padR, innerH = h - padT - padB;
   const max = Math.max(...series.map(p => p.count), 4);
 
@@ -210,13 +279,6 @@ function fillSelect(id, pairs) {
     el.appendChild(opt);
   }
   el.value = current;
-}
-
-function matchClass(m) {
-  if (m === null || m === undefined) return 'low';
-  if (m >= 60) return 'high';
-  if (m >= 30) return 'mid';
-  return 'low';
 }
 
 async function loadJobs() {
@@ -318,6 +380,7 @@ document.getElementById('prompt-input').addEventListener('keydown', (e) => {
 (async () => {
   PROFILE_ID = await initProfileSwitcher();
   if (!PROFILE_ID) return;
+  await loadHero();
   await loadStats();
   await loadJobs();
 })();
