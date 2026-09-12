@@ -6,6 +6,7 @@ const { PDFParse } = require('pdf-parse');
 const mammoth = require('mammoth');
 const {
   db,
+  upsertJobs,
   listProfiles,
   createProfile,
   getProfileById,
@@ -13,8 +14,9 @@ const {
   getSettingsByProfileId,
   saveSettingsByProfileId,
 } = require('./db/db');
+const crypto = require('crypto');
 const { inferSeniority, seniorityLabel, computeMatch, computeEligibility, SENIORITY_KEYWORDS } = require('./matching');
-const { extractProfileFromResume, parseJobPrompt, parsePreferences } = require('./ai');
+const { extractProfileFromResume, parseJobPrompt, parsePreferences, generateCoverLetter } = require('./ai');
 
 const upload = multer({ limits: { fileSize: 8 * 1024 * 1024 } });
 
@@ -193,6 +195,40 @@ app.get('/api/seniority-levels', (req, res) => {
   res.json(SENIORITY_KEYWORDS.map(({ key, label }) => ({ key, label })));
 });
 
+app.get('/api/autofill', async (req, res) => {
+  const profileId = Number(req.query.profile_id);
+  const rawUrl = req.query.url;
+  if (!profileId || !rawUrl) return res.status(400).json({ error: 'profile_id e url são obrigatórios.' });
+
+  const profile = getProfileById(profileId);
+  if (!profile) return res.status(404).json({ error: 'Perfil não encontrado.' });
+
+  const baseUrl = rawUrl.split('?')[0];
+  const job = db.prepare('SELECT * FROM jobs WHERE url LIKE ? LIMIT 1').get(`${baseUrl}%`);
+
+  const base = {
+    name: profile.name,
+    email: profile.email,
+    phone: profile.phone,
+    linkedin_url: profile.linkedin_url,
+    headline: profile.headline,
+    about: profile.about,
+    skills: profile.skills,
+  };
+
+  if (!job) {
+    return res.json({ ...base, job_matched: false, cover_letter: null });
+  }
+
+  try {
+    const coverLetter = await generateCoverLetter(profile, job);
+    res.json({ ...base, job_matched: true, job_title: job.title, cover_letter: coverLetter });
+  } catch (err) {
+    console.error('[autofill]', err);
+    res.json({ ...base, job_matched: true, job_title: job.title, cover_letter: null, cover_letter_error: err.message });
+  }
+});
+
 app.post('/api/profile/import-resume', upload.single('resume'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Nenhum arquivo enviado.' });
 
@@ -224,6 +260,29 @@ app.post('/api/profile/import-resume', upload.single('resume'), async (req, res)
     console.error('[import-resume]', err);
     res.status(500).json({ error: err.message });
   }
+});
+
+app.post('/api/jobs/capture', (req, res) => {
+  const { title, company, city, state, url, description, contract_type, workplace_type, published_date } = req.body;
+  if (!title || !url) return res.status(400).json({ error: 'title e url são obrigatórios.' });
+
+  const id = 'linkedin:' + crypto.createHash('sha1').update(url.split('?')[0]).digest('hex').slice(0, 16);
+  upsertJobs([{
+    id,
+    source: 'linkedin',
+    title,
+    company: company || null,
+    contract_type: contract_type || null,
+    workplace_type: workplace_type || null,
+    city: city || null,
+    state: state || null,
+    published_date: published_date || new Date().toISOString(),
+    url,
+    description: (description || '').slice(0, 4000),
+    search_term: 'captura manual (extensão)',
+  }]);
+
+  res.json({ ok: true, id });
 });
 
 app.post('/api/settings/import-preferences', async (req, res) => {

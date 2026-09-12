@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "Job Hunter — Preenchimento de Candidatura",
+  "version": "1.0.0",
+  "description": "Preenche formulários de candidatura (Gupy, Vagas.com) com os dados do seu Perfil no Job Hunter. Você revisa e envia manualmente — a extensão nunca clica em enviar.",
+  "permissions": ["storage"],
+  "host_permissions": ["http://178.18.250.39/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*.gupy.io/*", "*://www.vagas.com.br/*", "*://*.linkedin.com/jobs/view/*"],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Job Hunter — Configurações"
+  }
+}

@@ -132,4 +132,28 @@ async function parsePreferences(text) {
   return callWithFallback(PREFERENCES_SYSTEM_PROMPT, text.slice(0, 6000));
 }
 
-module.exports = { extractProfileFromResume, parseJobPrompt, parsePreferences };
+const COVER_LETTER_SYSTEM_PROMPT = `Você escreve uma carta de apresentação curta (4-6 frases, português do Brasil) pra uma
+candidatura de emprego, com base no perfil do candidato e na vaga. Tom profissional, direto,
+sem clichê genérico ("sou dedicado e proativo"), destacando de verdade os pontos do perfil que
+batem com a vaga. Se o perfil não tiver experiência clara com algo que a vaga pede, não invente —
+foque no que realmente existe no perfil.
+Responda APENAS com um JSON no formato:
+{ "cover_letter": "texto da carta, pronto pra colar num campo de candidatura ou e-mail" }`;
+
+async function generateCoverLetter(profile, job) {
+  const input = `PERFIL DO CANDIDATO:
+Nome: ${profile.name}
+Headline: ${profile.headline || '(não informado)'}
+Sobre: ${profile.about || '(não informado)'}
+Skills: ${(profile.skills || []).join(', ') || '(não informado)'}
+
+VAGA:
+Título: ${job.title}
+Empresa: ${job.company || '(não informado)'}
+Descrição: ${(job.description || '').slice(0, 3000)}`;
+
+  const result = await callWithFallback(COVER_LETTER_SYSTEM_PROMPT, input);
+  return result.cover_letter;
+}
+
+module.exports = { extractProfileFromResume, parseJobPrompt, parsePreferences, generateCoverLetter };
