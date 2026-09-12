@@ -1,11 +1,14 @@
 // Gupy não expõe nível de senioridade como campo estruturado — infere a partir do título,
 // usando o vocabulário comum em vagas de RH/Financeiro/Gestão no Brasil.
+// Ordem importa: "analista" sozinho é genérico demais (aparece em título de
+// qualquer nível — "Analista X Júnior/Pleno/Sênior"), por isso pleno só entra
+// como fallback, checado por último, depois de toda palavra explícita de nível.
 const SENIORITY_KEYWORDS = [
   { key: 'gerencial', label: 'Gerencial/Diretoria', words: ['gerente', 'gestor(a)', 'diretor', 'diretora', 'head de', 'superintendente'] },
   { key: 'senior', label: 'Sênior', words: ['sênior', 'senior', ' sr ', ' sr.', 'especialista', 'coordenador', 'coordenadora', 'supervisor', 'supervisora'] },
-  { key: 'pleno', label: 'Pleno', words: ['pleno', 'analista'] },
   { key: 'junior', label: 'Júnior', words: ['júnior', 'junior', ' jr ', ' jr.', 'assistente', 'auxiliar'] },
   { key: 'estagio', label: 'Estágio', words: ['estagiário', 'estagiária', 'estágio', 'jovem aprendiz', 'aprendiz'] },
+  { key: 'pleno', label: 'Pleno', words: ['pleno', 'analista'] },
 ];
 
 function inferSeniority(title) {
