@@ -10,7 +10,7 @@
   },
   "content_scripts": [
     {
-      "matches": ["*://*.gupy.io/*", "*://www.vagas.com.br/*", "*://*.linkedin.com/jobs/view/*"],
+      "matches": ["*://*.gupy.io/*", "*://www.vagas.com.br/*", "*://*.linkedin.com/jobs/*"],
       "js": ["content.js"],
       "css": ["content.css"],
       "run_at": "document_idle"

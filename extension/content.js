@@ -111,7 +111,7 @@
           : 'Vaga não está no banco — só preenchi seus dados de perfil, sem carta personalizada.');
 
         const coverTextarea = panel.querySelector('#jh-cover-textarea');
-        if (coverTextarea) coverTextarea.textContent = data.cover_letter;
+        if (coverTextarea) coverTextarea.value = data.cover_letter;
 
         wireClose();
         const copyBtn = panel.querySelector('.jh-copy');

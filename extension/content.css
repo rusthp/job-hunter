@@ -1,53 +1,58 @@
+/* !important em tudo aqui de propósito: essa UI roda injetada em cima do CSS
+   de Gupy/Vagas.com/LinkedIn, que competem por especificidade em elementos
+   genéricos como textarea/button (ex: achamos um `textarea:read-only` do
+   Vagas.com sobrescrevendo o fundo escuro, deixando texto claro em fundo claro). */
+
 #jobhunter-fab {
-  position: fixed;
-  bottom: 24px;
-  right: 24px;
-  z-index: 2147483647;
-  background: #2dd4a7;
-  color: #04231a;
-  border: none;
-  border-radius: 999px;
-  padding: 12px 18px;
-  font-size: 14px;
-  font-weight: 600;
-  font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-  cursor: pointer;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  position: fixed !important;
+  bottom: 24px !important;
+  right: 24px !important;
+  z-index: 2147483647 !important;
+  background: #2dd4a7 !important;
+  color: #04231a !important;
+  border: none !important;
+  border-radius: 999px !important;
+  padding: 12px 18px !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif !important;
+  cursor: pointer !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25) !important;
 }
-#jobhunter-fab:hover { filter: brightness(1.05); }
+#jobhunter-fab:hover { filter: brightness(1.05) !important; }
 
 #jobhunter-panel {
-  position: fixed;
-  bottom: 78px;
-  right: 24px;
-  z-index: 2147483647;
-  width: 340px;
-  max-height: 70vh;
-  overflow-y: auto;
-  background: #121821;
-  color: #e6edf3;
-  border: 1px solid #1f2733;
-  border-radius: 12px;
-  padding: 16px;
-  font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-  font-size: 13px;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+  position: fixed !important;
+  bottom: 78px !important;
+  right: 24px !important;
+  z-index: 2147483647 !important;
+  width: 340px !important;
+  max-height: 70vh !important;
+  overflow-y: auto !important;
+  background: #121821 !important;
+  color: #e6edf3 !important;
+  border: 1px solid #1f2733 !important;
+  border-radius: 12px !important;
+  padding: 16px !important;
+  font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif !important;
+  font-size: 13px !important;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35) !important;
 }
-#jobhunter-panel[hidden] { display: none; }
+#jobhunter-panel[hidden] { display: none !important; }
 
-.jh-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-size: 14px; }
-.jh-close { background: none; border: none; color: #8b98a5; font-size: 18px; cursor: pointer; line-height: 1; }
-.jh-hint, .jh-status { color: #8b98a5; margin-bottom: 8px; }
-.jh-error { color: #ef4444; margin-bottom: 10px; }
-.jh-cover-label { margin: 10px 0 6px; font-weight: 600; }
+.jh-header { display: flex !important; justify-content: space-between !important; align-items: center !important; margin-bottom: 10px !important; font-size: 14px !important; color: #e6edf3 !important; }
+.jh-close { background: none !important; border: none !important; color: #8b98a5 !important; font-size: 18px !important; cursor: pointer !important; line-height: 1 !important; }
+.jh-hint, .jh-status { color: #8b98a5 !important; margin-bottom: 8px !important; }
+.jh-error { color: #ef4444 !important; margin-bottom: 10px !important; }
+.jh-cover-label { margin: 10px 0 6px !important; font-weight: 600 !important; color: #e6edf3 !important; }
 .jh-cover-text {
-  width: 100%; min-height: 140px; background: #0e141c; border: 1px solid #1f2733;
-  border-radius: 8px; color: #e6edf3; padding: 8px; font-size: 12px; font-family: inherit;
-  resize: vertical; box-sizing: border-box;
+  width: 100% !important; min-height: 140px !important; background: #0e141c !important; border: 1px solid #1f2733 !important;
+  border-radius: 8px !important; color: #e6edf3 !important; padding: 8px !important; font-size: 12px !important; font-family: inherit !important;
+  resize: vertical !important; box-sizing: border-box !important; -webkit-text-fill-color: #e6edf3 !important;
 }
 .jh-copy {
-  margin-top: 8px; width: 100%; background: #2dd4a7; color: #04231a; border: none;
-  border-radius: 8px; padding: 8px; font-weight: 600; cursor: pointer;
+  margin-top: 8px !important; width: 100% !important; background: #2dd4a7 !important; color: #04231a !important; border: none !important;
+  border-radius: 8px !important; padding: 8px !important; font-weight: 600 !important; cursor: pointer !important;
 }
-.jh-footer { margin-top: 10px; color: #8b98a5; font-size: 11px; }
-.jh-loading { color: #8b98a5; }
+.jh-footer { margin-top: 10px !important; color: #8b98a5 !important; font-size: 11px !important; }
+.jh-loading { color: #8b98a5 !important; }
