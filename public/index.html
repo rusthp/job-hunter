@@ -132,10 +132,19 @@ async function loadHero() {
   const hint = document.getElementById('recommended-hint');
   const grid = document.getElementById('recommended-grid');
 
+  // Presencial já vem sinalizado como "fora da preferência" (onsite_policy) quando
+  // configurado — por isso o ranking usa modalidade como critério primário e match
+  // como desempate, em vez de só match bruto. Sem isso, vaga presencial com 1 palavra-
+  // chave batendo aparecia antes de vaga remota igualmente compatível.
+  const WORKPLACE_RANK = { remote: 0, hybrid: 1, null: 2, undefined: 2, 'on-site': 3 };
+
   let recommended;
   if (hasSkills) {
-    recommended = compatible.slice().sort((a, b) => b.match - a.match).slice(0, 6);
-    hint.textContent = 'Ordenadas por % de match com as skills do seu Perfil.';
+    recommended = compatible.slice().sort((a, b) => {
+      const rankDiff = WORKPLACE_RANK[a.workplace_type] - WORKPLACE_RANK[b.workplace_type];
+      return rankDiff !== 0 ? rankDiff : b.match - a.match;
+    }).slice(0, 6);
+    hint.textContent = 'Priorizando modalidade aceita (Configurações) e, dentro dela, % de match com suas skills.';
   } else {
     recommended = eligible.slice().sort((a, b) => new Date(b.published_date) - new Date(a.published_date)).slice(0, 6);
     hint.textContent = 'Cadastre skills no Perfil pra calcular compatibilidade — por enquanto, mostrando as mais recentes.';
