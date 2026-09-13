@@ -23,6 +23,12 @@ CREATE INDEX IF NOT EXISTS idx_jobs_source ON jobs(source);
 CREATE INDEX IF NOT EXISTS idx_jobs_contract_type ON jobs(contract_type);
 CREATE INDEX IF NOT EXISTS idx_jobs_workplace_type ON jobs(workplace_type);
 
+CREATE TABLE IF NOT EXISTS job_applications (
+  job_id TEXT PRIMARY KEY REFERENCES jobs(id) ON DELETE CASCADE,
+  profile_id INTEGER REFERENCES profiles(id) ON DELETE CASCADE,
+  applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- profile/settings (singular) são o schema antigo, de perfil único.
 -- profiles/profile_settings (plural) suportam múltiplos perfis (ex: Ally, Ligia).
 CREATE TABLE IF NOT EXISTS profile (
@@ -167,6 +173,22 @@ function upsertJobs(jobs) {
   tx(jobs);
 }
 
+function markJobApplied(jobId, profileId) {
+  db.prepare(
+    `INSERT INTO job_applications (job_id, profile_id) VALUES (@job_id, @profile_id)
+     ON CONFLICT(job_id) DO UPDATE SET profile_id=excluded.profile_id, applied_at=datetime('now')`
+  ).run({ job_id: jobId, profile_id: profileId });
+  return db.prepare('SELECT * FROM job_applications WHERE job_id = ?').get(jobId);
+}
+
+function unmarkJobApplied(jobId) {
+  db.prepare('DELETE FROM job_applications WHERE job_id = ?').run(jobId);
+}
+
+function getAppliedJobIds() {
+  return new Set(db.prepare('SELECT job_id FROM job_applications').all().map((r) => r.job_id));
+}
+
 function parseProfileRow(row) {
   if (!row) return null;
   return { ...row, skills: JSON.parse(row.skills || '[]') };
@@ -258,4 +280,7 @@ module.exports = {
   saveProfileById,
   getSettingsByProfileId,
   saveSettingsByProfileId,
+  markJobApplied,
+  unmarkJobApplied,
+  getAppliedJobIds,
 };

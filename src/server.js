@@ -13,6 +13,9 @@ const {
   saveProfileById,
   getSettingsByProfileId,
   saveSettingsByProfileId,
+  markJobApplied,
+  unmarkJobApplied,
+  getAppliedJobIds,
 } = require('./db/db');
 const crypto = require('crypto');
 const { inferSeniority, seniorityLabel, computeMatch, computeEligibility, SENIORITY_KEYWORDS } = require('./matching');
@@ -119,7 +122,7 @@ app.get('/api/jobs', (req, res) => {
   const profileId = requireProfile(req, res);
   if (!profileId) return;
 
-  const { contract_type, workplace_type, state, seniority, q, show_all } = req.query;
+  const { contract_type, workplace_type, state, seniority, q, show_all, applied, page, page_size } = req.query;
   const clauses = [];
   const params = {};
   if (contract_type) {
@@ -141,11 +144,12 @@ app.get('/api/jobs', (req, res) => {
   const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
   const profile = getProfileById(profileId);
   const settings = getSettingsByProfileId(profileId);
+  const appliedJobIds = getAppliedJobIds();
 
   let rows = db
     .prepare(
       `SELECT id, source, title, company, contract_type, workplace_type, city, state, published_date, url, description, search_term
-       FROM jobs ${where} ORDER BY published_date DESC LIMIT 300`
+       FROM jobs ${where} ORDER BY published_date DESC`
     )
     .all(params)
     .map((r) => {
@@ -161,13 +165,28 @@ app.get('/api/jobs', (req, res) => {
         match: computeMatch(r, profile, settings),
         excluded_by_policy: excluded,
         warnings,
+        applied: appliedJobIds.has(r.id),
       };
     });
 
   if (seniority) rows = rows.filter((r) => r.seniority === seniority);
-  if (!show_all) rows = rows.filter((r) => !r.excluded_by_policy);
 
-  res.json(rows);
+  // Aba "Enviadas" ignora a política de elegibilidade — uma candidatura já enviada
+  // continua relevante mesmo que a vaga tenha sido marcada fora da política depois.
+  if (applied === '1') {
+    rows = rows.filter((r) => r.applied);
+  } else if (!show_all) {
+    rows = rows.filter((r) => !r.excluded_by_policy);
+  }
+
+  const pageNum = Math.max(1, Number(page) || 1);
+  const pageSize = Math.min(Math.max(Number(page_size) || 50, 1), 1000);
+  const total = rows.length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const start = (pageNum - 1) * pageSize;
+  const items = rows.slice(start, start + pageSize);
+
+  res.json({ items, total, page: pageNum, page_size: pageSize, total_pages: totalPages });
 });
 
 app.get('/api/timeseries', (req, res) => {
@@ -287,6 +306,19 @@ app.post('/api/jobs/capture', (req, res) => {
   }]);
 
   res.json({ ok: true, id, contactEmail: contactEmail || null });
+});
+
+app.post('/api/jobs/:id/mark-applied', (req, res) => {
+  const jobId = req.params.id;
+  const profileId = Number(req.body.profile_id) || null;
+  const job = db.prepare('SELECT id FROM jobs WHERE id = ?').get(jobId);
+  if (!job) return res.status(404).json({ error: 'Vaga não encontrada.' });
+  res.json(markJobApplied(jobId, profileId));
+});
+
+app.delete('/api/jobs/:id/mark-applied', (req, res) => {
+  unmarkJobApplied(req.params.id);
+  res.json({ ok: true });
 });
 
 app.post('/api/settings/import-preferences', async (req, res) => {
