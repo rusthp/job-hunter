@@ -27,6 +27,15 @@ const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
+const APPLICATION_TYPE_LABELS = {
+  email: '🟢 E-mail',
+  whatsapp: '🟢 WhatsApp',
+  formulario_direto: '🟢 Formulário direto',
+  candidatura_rapida: '🟡 Candidatura rápida',
+  cadastro_plataforma: '🟠 Cadastro em plataforma',
+  processo_externo: '🔴 Processo externo',
+};
+
 const CONTRACT_LABELS = {
   effective: 'Efetivo (CLT)',
   temporary: 'Temporário',
@@ -148,7 +157,7 @@ app.get('/api/jobs', (req, res) => {
 
   let rows = db
     .prepare(
-      `SELECT id, source, title, company, contract_type, workplace_type, city, state, published_date, url, description, search_term
+      `SELECT id, source, title, company, contract_type, workplace_type, city, state, published_date, url, description, search_term, application_type
        FROM jobs ${where} ORDER BY published_date DESC`
     )
     .all(params)
@@ -162,6 +171,7 @@ app.get('/api/jobs', (req, res) => {
         workplace_label: WORKPLACE_LABELS[r.workplace_type] || r.workplace_type || 'Não informado',
         seniority: seniorityKey,
         seniority_label: seniorityKey ? seniorityLabel(seniorityKey) : 'Não identificado',
+        application_type_label: APPLICATION_TYPE_LABELS[r.application_type] || null,
         match: computeMatch(r, profile, settings),
         excluded_by_policy: excluded,
         warnings,
@@ -281,8 +291,10 @@ app.post('/api/profile/import-resume', upload.single('resume'), async (req, res)
   }
 });
 
+const APPLICATION_TYPES = new Set(['email', 'whatsapp', 'formulario_direto', 'candidatura_rapida', 'cadastro_plataforma', 'processo_externo']);
+
 app.post('/api/jobs/capture', (req, res) => {
-  const { title, company, city, state, url, description, contract_type, workplace_type, published_date, contactEmail } = req.body;
+  const { title, company, city, state, url, description, contract_type, workplace_type, published_date, contactEmail, application_type } = req.body;
   if (!title || !url) return res.status(400).json({ error: 'title e url são obrigatórios.' });
 
   const id = 'linkedin:' + crypto.createHash('sha1').update(url.split('?')[0]).digest('hex').slice(0, 16);
@@ -303,9 +315,22 @@ app.post('/api/jobs/capture', (req, res) => {
     url,
     description: descriptionWithEmail.slice(0, 4000),
     search_term: 'captura manual (extensão)',
+    application_type: APPLICATION_TYPES.has(application_type) ? application_type : null,
   }]);
 
   res.json({ ok: true, id, contactEmail: contactEmail || null });
+});
+
+app.put('/api/jobs/:id/application-type', (req, res) => {
+  const jobId = req.params.id;
+  const { application_type } = req.body;
+  if (application_type !== null && !APPLICATION_TYPES.has(application_type)) {
+    return res.status(400).json({ error: 'application_type inválido.' });
+  }
+  const job = db.prepare('SELECT id FROM jobs WHERE id = ?').get(jobId);
+  if (!job) return res.status(404).json({ error: 'Vaga não encontrada.' });
+  db.prepare('UPDATE jobs SET application_type = ? WHERE id = ?').run(application_type, jobId);
+  res.json({ ok: true, id: jobId, application_type });
 });
 
 app.post('/api/jobs/:id/mark-applied', (req, res) => {

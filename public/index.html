@@ -85,6 +85,7 @@
             <th>Local</th>
             <th>Publicada</th>
             <th>Match</th>
+            <th>Candidatura</th>
             <th></th>
           </tr>
         </thead>
@@ -302,6 +303,27 @@ let CURRENT_TAB = 'all';
 let CURRENT_PAGE = 1;
 const PAGE_SIZE = 30;
 
+const APPLICATION_TYPE_OPTIONS = [
+  ['', '—'],
+  ['email', '🟢 E-mail'],
+  ['whatsapp', '🟢 WhatsApp'],
+  ['formulario_direto', '🟢 Formulário direto'],
+  ['candidatura_rapida', '🟡 Candidatura rápida'],
+  ['cadastro_plataforma', '🟠 Cadastro em plataforma'],
+  ['processo_externo', '🔴 Processo externo'],
+];
+
+async function setApplicationType(jobId, value, select) {
+  select.disabled = true;
+  try {
+    await fetch(`api/jobs/${encodeURIComponent(jobId)}/application-type`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ application_type: value || null })
+    });
+  } finally {
+    select.disabled = false;
+  }
+}
+
 async function toggleApplied(jobId, makeApplied, btn) {
   btn.disabled = true;
   try {
@@ -356,7 +378,7 @@ async function loadJobs() {
   const body = document.getElementById('jobs-body');
 
   if (!jobs.length) {
-    body.innerHTML = `<tr><td colspan="9" class="empty">${CURRENT_TAB === 'applied' ? 'Nenhuma candidatura marcada como enviada ainda.' : 'Nenhuma vaga encontrada com esses filtros.'}</td></tr>`;
+    body.innerHTML = `<tr><td colspan="10" class="empty">${CURRENT_TAB === 'applied' ? 'Nenhuma candidatura marcada como enviada ainda.' : 'Nenhuma vaga encontrada com esses filtros.'}</td></tr>`;
     renderPagination(1, 1);
     return;
   }
@@ -376,12 +398,20 @@ async function loadJobs() {
       <td>${[j.city, j.state].filter(Boolean).join(' / ') || '—'}</td>
       <td>${j.published_date ? new Date(j.published_date).toLocaleDateString('pt-BR') : '—'}</td>
       <td class="match ${matchClass(j.match)}">${j.match === null ? '—' : j.match + '%'}</td>
+      <td>
+        <select class="f-application-type" data-job-id="${j.id}">
+          ${APPLICATION_TYPE_OPTIONS.map(([v, label]) => `<option value="${v}" ${v === (j.application_type || '') ? 'selected' : ''}>${label}</option>`).join('')}
+        </select>
+      </td>
       <td><button class="btn btn-mark" data-job-id="${j.id}" data-applied="${j.applied ? '1' : '0'}" type="button">${j.applied ? 'Desmarcar' : 'Marcar enviada'}</button></td>
     </tr>
   `).join('');
 
   body.querySelectorAll('.btn-mark').forEach(btn => {
     btn.addEventListener('click', () => toggleApplied(btn.dataset.jobId, btn.dataset.applied === '0', btn));
+  });
+  body.querySelectorAll('.f-application-type').forEach(sel => {
+    sel.addEventListener('change', () => setApplicationType(sel.dataset.jobId, sel.value, sel));
   });
 
   renderPagination(page, total_pages);

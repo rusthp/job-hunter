@@ -182,6 +182,10 @@ a.job-link { color: var(--accent); text-decoration: none; }
 a.job-link:hover { text-decoration: underline; }
 .tag { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; background: var(--accent-dim); color: var(--accent); }
 .tag.muted { background: #1a212c; color: var(--muted); }
+.f-application-type {
+  background: #0e141c; border: 1px solid var(--panel-border); color: var(--text);
+  padding: 4px 6px; border-radius: 6px; font-size: 12px; max-width: 150px;
+}
 .match { font-weight: 700; }
 .match.high { color: var(--accent); }
 .match.mid { color: #e0b84a; }

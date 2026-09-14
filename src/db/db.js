@@ -22,6 +22,16 @@ CREATE TABLE IF NOT EXISTS jobs (
 CREATE INDEX IF NOT EXISTS idx_jobs_source ON jobs(source);
 CREATE INDEX IF NOT EXISTS idx_jobs_contract_type ON jobs(contract_type);
 CREATE INDEX IF NOT EXISTS idx_jobs_workplace_type ON jobs(workplace_type);
+`);
+
+// application_type é opcional e foi adicionado depois — better-sqlite3 não
+// suporta "ADD COLUMN IF NOT EXISTS", então checa antes de rodar o ALTER.
+const jobsColumns = db.prepare("PRAGMA table_info(jobs)").all().map((c) => c.name);
+if (!jobsColumns.includes('application_type')) {
+  db.exec("ALTER TABLE jobs ADD COLUMN application_type TEXT");
+}
+
+db.exec(`
 
 CREATE TABLE IF NOT EXISTS job_applications (
   job_id TEXT PRIMARY KEY REFERENCES jobs(id) ON DELETE CASCADE,
@@ -151,8 +161,8 @@ function migrateLegacyProfileIfNeeded() {
 migrateLegacyProfileIfNeeded();
 
 const upsertStmt = db.prepare(`
-INSERT INTO jobs (id, source, title, company, contract_type, workplace_type, city, state, published_date, url, description, search_term)
-VALUES (@id, @source, @title, @company, @contract_type, @workplace_type, @city, @state, @published_date, @url, @description, @search_term)
+INSERT INTO jobs (id, source, title, company, contract_type, workplace_type, city, state, published_date, url, description, search_term, application_type)
+VALUES (@id, @source, @title, @company, @contract_type, @workplace_type, @city, @state, @published_date, @url, @description, @search_term, @application_type)
 ON CONFLICT(id) DO UPDATE SET
   title=excluded.title,
   company=excluded.company,
@@ -163,12 +173,15 @@ ON CONFLICT(id) DO UPDATE SET
   published_date=excluded.published_date,
   url=excluded.url,
   description=excluded.description,
-  search_term=excluded.search_term
+  search_term=excluded.search_term,
+  application_type=COALESCE(excluded.application_type, jobs.application_type)
 `);
 
+// Coleta em massa (scrapers) não sabe o tipo de candidatura; captura manual/extensão
+// pode informar. COALESCE no UPDATE evita apagar um valor já classificado antes.
 function upsertJobs(jobs) {
   const tx = db.transaction((list) => {
-    for (const job of list) upsertStmt.run(job);
+    for (const job of list) upsertStmt.run({ application_type: null, ...job });
   });
   tx(jobs);
 }
