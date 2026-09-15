@@ -156,4 +156,22 @@ Descrição: ${(job.description || '').slice(0, 3000)}`;
   return result.cover_letter;
 }
 
-module.exports = { extractProfileFromResume, parseJobPrompt, parsePreferences, generateCoverLetter };
+const FREETEXT_JOB_SYSTEM_PROMPT = `Você extrai dados estruturados de um post de vaga de emprego em texto livre
+(rede social como Facebook/Instagram, sem campos estruturados). Área: RH, Financeiro, Contábil ou Gestão de empresas no Brasil.
+Responda APENAS com um JSON no formato:
+{
+  "title": "cargo da vaga, ex: 'Assistente Financeiro'",
+  "company": "nome da empresa contratante, ou null se não identificar",
+  "city": "cidade, ou null",
+  "state": "estado por extenso (ex: 'São Paulo'), ou null",
+  "contract_type": "um de: effective, temporary, internship, apprentice, vacancy_legal_entity — ou null se não mencionado",
+  "workplace_type": "um de: remote, hybrid, on-site — ou null se não mencionado explicitamente (NÃO assuma presencial por padrão, use null se não estiver claro)",
+  "contact_email": "e-mail de candidatura encontrado no texto, ou null"
+}
+Não invente dados que não estão no texto. Se um campo não for mencionado claramente, use null.`;
+
+async function extractJobFromFreeText(rawText) {
+  return callWithFallback(FREETEXT_JOB_SYSTEM_PROMPT, rawText.slice(0, 4000));
+}
+
+module.exports = { extractProfileFromResume, parseJobPrompt, parsePreferences, generateCoverLetter, extractJobFromFreeText };

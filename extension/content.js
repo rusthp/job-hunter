@@ -2,14 +2,17 @@
   if (document.getElementById('jobhunter-fab')) return;
 
   const isLinkedIn = location.hostname.includes('linkedin.com');
+  const isFacebook = location.hostname.includes('facebook.com');
 
   const fab = document.createElement('button');
   fab.id = 'jobhunter-fab';
   fab.type = 'button';
-  fab.textContent = isLinkedIn ? '🎯 Capturar vaga' : '🎯 Job Hunter';
-  fab.title = isLinkedIn
-    ? 'Enviar essa vaga pro banco do Job Hunter'
-    : 'Preencher candidatura com dados do Job Hunter';
+  fab.textContent = (isLinkedIn || isFacebook) ? '🎯 Capturar vaga' : '🎯 Job Hunter';
+  fab.title = isFacebook
+    ? 'Enviar o post selecionado (ou a página) pro banco do Job Hunter'
+    : isLinkedIn
+      ? 'Enviar essa vaga pro banco do Job Hunter'
+      : 'Preencher candidatura com dados do Job Hunter';
   document.body.appendChild(fab);
 
   const panel = document.createElement('div');
@@ -230,5 +233,52 @@
     });
   }
 
-  fab.addEventListener('click', isLinkedIn ? runCapture : runAutofill);
+  // ---------- Modo Facebook: capturar texto livre (post não tem campos estruturados) ----------
+
+  function extractFacebookText() {
+    const selected = window.getSelection()?.toString().trim();
+    if (selected && selected.length > 30) return selected;
+
+    // Sem seleção: tenta o container de post (role="article") como melhor esforço —
+    // o DOM do Facebook usa classes ofuscadas que mudam com frequência, então isso
+    // é best-effort, não confiável como os seletores do LinkedIn.
+    const article = document.querySelector('[role="article"]');
+    if (article?.innerText && article.innerText.trim().length > 30) return article.innerText.trim();
+
+    return document.body.innerText.slice(0, 4000).trim();
+  }
+
+  function runFacebookCapture() {
+    const text = extractFacebookText();
+    if (!text || text.length < 30) {
+      renderPanel(`
+        <div class="jh-header"><strong>Job Hunter</strong><button class="jh-close" title="Fechar">×</button></div>
+        <div class="jh-error">Não consegui pegar texto suficiente. Selecione o texto do post antes de clicar no botão.</div>
+      `);
+      wireClose();
+      return;
+    }
+
+    renderPanel('<div class="jh-loading">Interpretando o post com IA e enviando pro Job Hunter...</div>');
+
+    chrome.runtime.sendMessage({ type: 'JOBHUNTER_CAPTURE_FREETEXT', text, pageUrl: location.href.split('?')[0] }, (response) => {
+      if (!response || response.error) {
+        renderPanel('<div class="jh-error" id="jh-error"></div><button class="jh-close">Fechar</button>');
+        setText('#jh-error', 'Erro: ' + (response?.error || 'sem resposta'));
+        wireClose();
+        return;
+      }
+
+      const extracted = response.data.extracted || {};
+      renderPanel(`
+        <div class="jh-header"><strong>Job Hunter</strong><button class="jh-close" title="Fechar">×</button></div>
+        <div class="jh-status" id="jh-captured"></div>
+        <div class="jh-footer">Revise no dashboard — extração por IA pode errar cargo/empresa/cidade.</div>
+      `);
+      setText('#jh-captured', `Vaga "${extracted.title || '?'}" (${extracted.company || 'empresa não identificada'}) salva no banco ✓`);
+      wireClose();
+    });
+  }
+
+  fab.addEventListener('click', isFacebook ? runFacebookCapture : isLinkedIn ? runCapture : runAutofill);
 })();

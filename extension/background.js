@@ -50,5 +50,28 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
+  if (msg.type === 'JOBHUNTER_CAPTURE_FREETEXT') {
+    (async () => {
+      try {
+        const { serverUrl, headers } = await getAuthAndServer();
+        if (!serverUrl) {
+          sendResponse({ error: 'Configure a extensão primeiro (clique no ícone dela).' });
+          return;
+        }
+        const res = await fetch(`${serverUrl.replace(/\/$/, '')}/api/jobs/capture-freetext`, {
+          method: 'POST',
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: msg.text, url: msg.pageUrl }),
+        });
+        const data = await res.json();
+        if (!res.ok) return sendResponse({ error: data.error || `Servidor respondeu HTTP ${res.status}` });
+        sendResponse({ data });
+      } catch (err) {
+        sendResponse({ error: err.message });
+      }
+    })();
+    return true;
+  }
+
   return false;
 });

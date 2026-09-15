@@ -19,7 +19,7 @@ const {
 } = require('./db/db');
 const crypto = require('crypto');
 const { inferSeniority, seniorityLabel, computeMatch, computeEligibility, SENIORITY_KEYWORDS } = require('./matching');
-const { extractProfileFromResume, parseJobPrompt, parsePreferences, generateCoverLetter } = require('./ai');
+const { extractProfileFromResume, parseJobPrompt, parsePreferences, generateCoverLetter, extractJobFromFreeText } = require('./ai');
 
 const upload = multer({ limits: { fileSize: 8 * 1024 * 1024 } });
 
@@ -344,6 +344,44 @@ app.post('/api/jobs/:id/mark-applied', (req, res) => {
 app.delete('/api/jobs/:id/mark-applied', (req, res) => {
   unmarkJobApplied(req.params.id);
   res.json({ ok: true });
+});
+
+app.post('/api/jobs/capture-freetext', async (req, res) => {
+  const { text, url } = req.body;
+  if (!text || !text.trim() || !url) return res.status(400).json({ error: 'text e url são obrigatórios.' });
+
+  try {
+    const extracted = await extractJobFromFreeText(text);
+    if (!extracted.title) {
+      return res.status(422).json({ error: 'Não consegui identificar um cargo nesse texto.' });
+    }
+
+    const id = 'linkedin:' + crypto.createHash('sha1').update(url.split('?')[0]).digest('hex').slice(0, 16);
+    const descriptionWithEmail = extracted.contact_email
+      ? `[E-mail de contato encontrado na vaga: ${extracted.contact_email}]\n\n${text}`
+      : text;
+
+    upsertJobs([{
+      id,
+      source: 'freetext',
+      title: extracted.title,
+      company: extracted.company || null,
+      contract_type: extracted.contract_type || null,
+      workplace_type: extracted.workplace_type || null,
+      city: extracted.city || null,
+      state: extracted.state || null,
+      published_date: new Date().toISOString(),
+      url,
+      description: descriptionWithEmail.slice(0, 4000),
+      search_term: 'captura de texto livre (extensão)',
+      application_type: extracted.contact_email ? 'email' : null,
+    }]);
+
+    res.json({ ok: true, id, extracted });
+  } catch (err) {
+    console.error('[capture-freetext]', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.post('/api/settings/import-preferences', async (req, res) => {
