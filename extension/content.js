@@ -9,11 +9,21 @@
   fab.type = 'button';
   fab.textContent = (isLinkedIn || isFacebook) ? '🎯 Capturar vaga' : '🎯 Job Hunter';
   fab.title = isFacebook
-    ? 'Enviar o post selecionado (ou a página) pro banco do Job Hunter'
+    ? 'Enviar o texto selecionado pro banco do Job Hunter'
     : isLinkedIn
       ? 'Enviar essa vaga pro banco do Job Hunter'
       : 'Preencher candidatura com dados do Job Hunter';
   document.body.appendChild(fab);
+
+  let fabScan = null;
+  if (isFacebook) {
+    fabScan = document.createElement('button');
+    fabScan.id = 'jobhunter-fab-scan';
+    fabScan.type = 'button';
+    fabScan.textContent = '📋 Escanear feed';
+    fabScan.title = 'Escanear todos os posts visíveis na tela e mandar os que parecerem vaga pro Job Hunter — role o feed primeiro pra carregar mais posts, você continua no controle da navegação';
+    document.body.appendChild(fabScan);
+  }
 
   const panel = document.createElement('div');
   panel.id = 'jobhunter-panel';
@@ -280,5 +290,63 @@
     });
   }
 
+  // ---------- Modo Facebook (lote): escanear todos os posts visíveis na tela ----------
+  // Só olha o que já está renderizado na página que a pessoa está navegando — não
+  // navega, não rola, não clica em nada sozinho. Rolar o feed pra carregar mais
+  // posts continua sendo ação humana.
+
+  function collectVisibleFacebookPosts() {
+    const nodes = [...document.querySelectorAll('[role="article"]')];
+    const seen = new Set();
+    const posts = [];
+    for (const node of nodes) {
+      const text = (node.innerText || '').trim();
+      if (text.length < 60) continue;
+      const key = text.slice(0, 120);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      posts.push(text.slice(0, 4000));
+    }
+    return posts.slice(0, 25); // teto de segurança por escaneamento
+  }
+
+  function captureFreetextPromise(text) {
+    return new Promise((resolve) => {
+      chrome.runtime.sendMessage({ type: 'JOBHUNTER_CAPTURE_FREETEXT', text, pageUrl: location.href.split('?')[0] }, resolve);
+    });
+  }
+
+  async function runFacebookScan() {
+    const posts = collectVisibleFacebookPosts();
+    if (!posts.length) {
+      renderPanel(`
+        <div class="jh-header"><strong>Job Hunter</strong><button class="jh-close" title="Fechar">×</button></div>
+        <div class="jh-error">Não achei posts na tela (layout do Facebook pode ter mudado, ou role o feed pra carregar mais antes de escanear).</div>
+      `);
+      wireClose();
+      return;
+    }
+
+    const results = [];
+    for (let i = 0; i < posts.length; i++) {
+      renderPanel(`<div class="jh-loading">Escaneando post ${i + 1} de ${posts.length}...</div>`);
+      const response = await captureFreetextPromise(posts[i]);
+      if (response && !response.error && response.data?.extracted?.title) {
+        results.push(response.data.extracted);
+      }
+      // response.error (ex: "não identifiquei cargo") = post não é vaga, ignora e segue
+    }
+
+    renderPanel(`
+      <div class="jh-header"><strong>Job Hunter</strong><button class="jh-close" title="Fechar">×</button></div>
+      <div class="jh-status" id="jh-scan-summary"></div>
+      ${results.length ? `<div class="jh-hint">${results.map(r => `• ${r.title}${r.company ? ' — ' + r.company : ''}`).join('<br>')}</div>` : ''}
+      <div class="jh-footer">Revise no dashboard — extração por IA pode errar cargo/empresa/cidade. Role o feed e escaneie de novo pra pegar mais posts.</div>
+    `);
+    setText('#jh-scan-summary', `${posts.length} post(s) na tela, ${results.length} identificado(s) como vaga e salvo(s) no banco.`);
+    wireClose();
+  }
+
   fab.addEventListener('click', isFacebook ? runFacebookCapture : isLinkedIn ? runCapture : runAutofill);
+  if (fabScan) fabScan.addEventListener('click', runFacebookScan);
 })();

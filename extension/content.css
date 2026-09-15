@@ -21,6 +21,24 @@
 }
 #jobhunter-fab:hover { filter: brightness(1.05) !important; }
 
+#jobhunter-fab-scan {
+  position: fixed !important;
+  bottom: 74px !important;
+  right: 24px !important;
+  z-index: 2147483647 !important;
+  background: #121821 !important;
+  color: #2dd4a7 !important;
+  border: 1px solid #2dd4a7 !important;
+  border-radius: 999px !important;
+  padding: 10px 16px !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif !important;
+  cursor: pointer !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25) !important;
+}
+#jobhunter-fab-scan:hover { filter: brightness(1.15) !important; }
+
 #jobhunter-panel {
   position: fixed !important;
   bottom: 78px !important;
