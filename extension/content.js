@@ -295,8 +295,17 @@
   // navega, não rola, não clica em nada sozinho. Rolar o feed pra carregar mais
   // posts continua sendo ação humana.
 
-  function collectVisibleFacebookPosts() {
-    const nodes = [...document.querySelectorAll('[role="article"]')];
+  // Facebook muda o layout do feed com frequência e usa classes ofuscadas —
+  // não existe um seletor único confiável como no LinkedIn. Tenta várias
+  // assinaturas conhecidas em cascata; a primeira que achar algo, usa.
+  const FACEBOOK_POST_SELECTORS = [
+    '[role="article"]',
+    'div[aria-posinset]',
+    'div[data-pagelet^="FeedUnit"]',
+    'div[data-pagelet^="GroupFeed"]',
+  ];
+
+  function nodesToPosts(nodes) {
     const seen = new Set();
     const posts = [];
     for (const node of nodes) {
@@ -307,7 +316,23 @@
       seen.add(key);
       posts.push(text.slice(0, 4000));
     }
-    return posts.slice(0, 25); // teto de segurança por escaneamento
+    return posts;
+  }
+
+  function collectVisibleFacebookPosts() {
+    for (const selector of FACEBOOK_POST_SELECTORS) {
+      const nodes = [...document.querySelectorAll(selector)];
+      if (!nodes.length) continue;
+      const posts = nodesToPosts(nodes);
+      if (posts.length) return posts.slice(0, 25);
+    }
+
+    // Nenhum seletor estrutural bateu — último recurso, corta o texto da
+    // página nos rodapés padrão de post ("Curtir"/"Comentar"/"Compartilhar").
+    // Impreciso (mistura barra lateral, comentários), mas melhor que nada.
+    const bodyText = document.body.innerText || '';
+    const chunks = bodyText.split(/\n(?:Curtir|Comentar|Compartilhar)\n/);
+    return nodesToPosts(chunks.map((text) => ({ innerText: text }))).slice(0, 25);
   }
 
   function captureFreetextPromise(text) {
@@ -321,7 +346,7 @@
     if (!posts.length) {
       renderPanel(`
         <div class="jh-header"><strong>Job Hunter</strong><button class="jh-close" title="Fechar">×</button></div>
-        <div class="jh-error">Não achei posts na tela (layout do Facebook pode ter mudado, ou role o feed pra carregar mais antes de escanear).</div>
+        <div class="jh-error">Não achei posts na tela mesmo tentando alguns formatos — esse layout específico do Facebook não é reconhecido. Enquanto eu não ajusto os seletores, use o botão "🎯 Capturar vaga" de cima: selecione o texto do post manualmente e clique nele — isso continua funcionando independente do layout.</div>
       `);
       wireClose();
       return;
