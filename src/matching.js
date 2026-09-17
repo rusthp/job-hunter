@@ -90,6 +90,11 @@ function computeEligibility(job, settings) {
   if (job.workplace_type === 'on-site') {
     if (settings.onsite_policy === 'hide') excluded = true;
     else if (settings.onsite_policy === 'flag') warnings.push('Presencial — fora da preferência, avalie com cuidado');
+  } else if (!job.workplace_type) {
+    // Modalidade não capturada pelo scraper (comum no Vagas.com) — sem isso, uma
+    // vaga presencial em outra cidade passa pelos checks acima como se não
+    // tivesse restrição. Aviso, não exclusão: não dá pra confirmar sem abrir a vaga.
+    warnings.push('Modalidade não informada na vaga — confirme se é remoto antes de aplicar');
   }
 
   const seniorityKey = inferSeniority(job.title);
