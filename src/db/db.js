@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS job_applications (
 );
 
 -- profile/settings (singular) são o schema antigo, de perfil único.
--- profiles/profile_settings (plural) suportam múltiplos perfis (ex: Ally, Ligia).
+-- profiles/profile_settings (plural) suportam múltiplos perfis (ex: um perfil por pessoa).
 CREATE TABLE IF NOT EXISTS profile (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   headline TEXT,

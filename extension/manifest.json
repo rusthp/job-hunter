@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "description": "Preenche formulários de candidatura (Gupy, Vagas.com) com os dados do seu Perfil no Job Hunter. Você revisa e envia manualmente — a extensão nunca clica em enviar.",
   "permissions": ["storage"],
-  "host_permissions": ["http://178.18.250.39/*"],
+  "host_permissions": ["http://localhost/*", "http://127.0.0.1/*"],
   "background": {
     "service_worker": "background.js"
   },
